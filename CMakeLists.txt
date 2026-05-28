@@ -9,6 +9,8 @@ set(SOURCES
     src/main.cpp
     src/core/blend_modes.cpp
     src/core/watermark_engine.cpp
+    src/core/inpaint.cpp
+    src/detection/ncc_detector.cpp
     src/cli/cli_app.cpp
 )
 
@@ -36,6 +38,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     opencv_core
     opencv_imgcodecs
     opencv_imgproc
+    opencv_photo
     fmt::fmt
     CLI11::CLI11
     spdlog::spdlog
