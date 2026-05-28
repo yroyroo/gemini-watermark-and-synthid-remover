@@ -12,8 +12,10 @@ set(SOURCES
     src/core/inpaint.cpp
     src/core/fft_context.cpp
     src/detection/ncc_detector.cpp
+    src/detection/synthid_detector.cpp
     src/synthid/spectral_codebook.cpp
     src/synthid/codebook_subtractor.cpp
+    src/synthid/codebook_builder.cpp
     src/cli/cli_app.cpp
 )
 
