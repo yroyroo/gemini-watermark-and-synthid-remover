@@ -10,6 +10,7 @@ set(SOURCES
     src/core/blend_modes.cpp
     src/core/watermark_engine.cpp
     src/core/inpaint.cpp
+    src/core/fft_context.cpp
     src/detection/ncc_detector.cpp
     src/cli/cli_app.cpp
 )
@@ -33,6 +34,7 @@ find_package(OpenCV REQUIRED)
 find_package(fmt REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(spdlog REQUIRED)
+find_package(FFTW3f REQUIRED)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     opencv_core
@@ -42,6 +44,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     fmt::fmt
     CLI11::CLI11
     spdlog::spdlog
+    FFTW3::fftw3f
 )
 
 # Platform-specific flags

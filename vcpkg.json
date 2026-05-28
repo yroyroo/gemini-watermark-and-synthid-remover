@@ -5,6 +5,7 @@
     { "name": "opencv4", "default-features": false, "features": ["jpeg", "png", "webp"] },
     "fmt",
     "cli11",
-    "spdlog"
+    "spdlog",
+    "fftw3"
   ]
 }
