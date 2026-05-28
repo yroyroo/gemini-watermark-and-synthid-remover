@@ -82,3 +82,4 @@ results/
 
 # vcpkg
 vcpkg_installed/
+test-output.png

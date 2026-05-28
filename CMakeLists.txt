@@ -1,0 +1,63 @@
+cmake_minimum_required(VERSION 3.21)
+project(wmr VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Sources
+set(SOURCES
+    src/main.cpp
+    src/core/blend_modes.cpp
+    src/core/watermark_engine.cpp
+    src/cli/cli_app.cpp
+)
+
+# Executable
+add_executable(${PROJECT_NAME} ${SOURCES})
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/assets
+)
+
+# Compile definitions
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    APP_VERSION="${PROJECT_VERSION}"
+    APP_NAME="${PROJECT_NAME}"
+)
+
+# Find dependencies via vcpkg
+find_package(OpenCV REQUIRED)
+find_package(fmt REQUIRED)
+find_package(CLI11 REQUIRED)
+find_package(spdlog REQUIRED)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    opencv_core
+    opencv_imgcodecs
+    opencv_imgproc
+    fmt::fmt
+    CLI11::CLI11
+    spdlog::spdlog
+)
+
+# Platform-specific flags
+if(APPLE)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+elseif(UNIX)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+    target_link_options(${PROJECT_NAME} PRIVATE -static-libgcc -static-libstdc++)
+elseif(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W4 /utf-8)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+    set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
+
+# Release optimizations
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(NOT MSVC)
+        target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+    else()
+        target_compile_options(${PROJECT_NAME} PRIVATE /O2)
+    endif()
+endif()

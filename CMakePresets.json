@@ -1,0 +1,61 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "vcpkg-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "mac-base",
+      "hidden": true,
+      "inherits": "vcpkg-base",
+      "generator": "Ninja",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0"
+      }
+    },
+    {
+      "name": "mac-x64-Release",
+      "displayName": "macOS Release (Universal)",
+      "inherits": "mac-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "mac-x64-Debug",
+      "displayName": "macOS Debug (Universal)",
+      "inherits": "mac-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "mac-x64-Release",
+      "configurePreset": "mac-x64-Release"
+    },
+    {
+      "name": "mac-x64-Debug",
+      "configurePreset": "mac-x64-Debug"
+    }
+  ]
+}

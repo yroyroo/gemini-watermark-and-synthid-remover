@@ -1,0 +1,10 @@
+{
+  "name": "wmr",
+  "version": "0.1.0",
+  "dependencies": [
+    { "name": "opencv4", "default-features": false, "features": ["jpeg", "png", "webp"] },
+    "fmt",
+    "cli11",
+    "spdlog"
+  ]
+}

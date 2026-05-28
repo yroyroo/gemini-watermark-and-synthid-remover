@@ -42,12 +42,12 @@ src/
 
 ## Test Data
 
-The `test-data/` directory contains sample files for development and validation. These are large binaries and are not tracked in git.
+The `test-images/` and `test-videos/` directories contain sample files for development and validation.
 
 | File | Description |
 |------|-------------|
-| `test-data/2400x1792-gemini.png` | Gemini-generated image with visible watermark + SynthID |
-| `test-data/720x1280-veo.mp4` | Veo-generated video with visible text watermark |
+| `test-images/2400x1792-gemini.png` | Gemini-generated image with visible watermark + SynthID |
+| `test-videos/720x1280-veo.mp4` | Veo-generated video with visible text watermark |
 
 ## Technical Background
 
