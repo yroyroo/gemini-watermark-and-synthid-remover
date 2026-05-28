@@ -98,10 +98,13 @@ void CodebookSubtractor::remove_synthid(
     cv::Mat channels[3];
     cv::split(work, channels);
 
+    spdlog::info("SynthID removal: {}x{} image, {} passes, base_strength={}",
+                 w, h, num_passes, static_cast<int>(base_strength));
+
     for (int pass = 0; pass < num_passes; ++pass) {
         auto params = get_strength_params(schedule[pass].level);
 
-        spdlog::debug("SynthID pass {}/{}: removal={:.2f}, cons_floor={:.2f}, "
+        spdlog::debug("Pass {}/{}: removal={:.2f}, cons_floor={:.2f}, "
                       "mag_cap={:.2f}, dc_radius={:.0f}",
                       pass + 1, num_passes, params.removal, params.cons_floor,
                       params.mag_cap, params.dc_radius);

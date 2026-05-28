@@ -32,8 +32,12 @@ SynthidDetectionResult SynthidDetector::detect(
 
     const SpectralProfile& profile = codebook.get_profile(w, h);
 
+    // Convert to float for FFT operations
+    cv::Mat work_f;
+    work.convertTo(work_f, CV_32FC3, 1.0 / 255.0);
+
     cv::Mat channels[3];
-    cv::split(work, channels);
+    cv::split(work_f, channels);
 
     // Per-channel scores, averaged across BGR
     float avg_noise = 0.0f;
@@ -93,18 +97,7 @@ float SynthidDetector::noise_correlation(
     cv::Mat denoised;
     cv::bilateralFilter(channel, denoised, 9, 75.0, 75.0);
 
-    cv::Mat noise;
-    if (channel.type() != CV_32FC1) {
-        cv::Mat ch_f;
-        channel.convertTo(ch_f, CV_32FC1);
-        cv::Mat den_f;
-        denoised.convertTo(den_f, CV_32FC1);
-        noise = ch_f - den_f;
-    } else {
-        cv::Mat den_f;
-        denoised.convertTo(den_f, CV_32FC1);
-        noise = channel - den_f;
-    }
+    cv::Mat noise = channel - denoised;
 
     // FFT of noise residual
     cv::Mat noise_fft = fft_.forward(noise);

@@ -57,6 +57,28 @@ TEST_CASE("FFT magnitude and phase extraction", "[fft]") {
     REQUIRE(dc_mag > 100.0f);  // 16*16 = 256
 }
 
+TEST_CASE("FFT round-trip at 1024x1024 (production size)", "[fft]") {
+    FftContext fft;
+    cv::Mat input(1024, 1024, CV_32FC1);
+    for (int y = 0; y < 1024; ++y) {
+        for (int x = 0; x < 1024; ++x) {
+            input.at<float>(y, x) = 0.3f + 0.2f * std::sin(y * 0.1f) * std::cos(x * 0.1f);
+        }
+    }
+
+    cv::Mat freq = fft.forward(input);
+    cv::Mat recovered = fft.inverse(freq);
+
+    REQUIRE(recovered.type() == CV_32FC1);
+    REQUIRE(recovered.size() == input.size());
+
+    cv::Mat diff;
+    cv::absdiff(input, recovered, diff);
+    double max_err = 0;
+    cv::minMaxLoc(diff, nullptr, &max_err);
+    REQUIRE(max_err < 1e-4);
+}
+
 TEST_CASE("from_polar reconstructs complex from magnitude and phase", "[fft]") {
     FftContext fft;
     cv::Mat input(16, 16, CV_32FC1);

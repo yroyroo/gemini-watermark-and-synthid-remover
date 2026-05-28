@@ -2,6 +2,7 @@
 
 #include <fftw3.h>
 #include <stdexcept>
+#include <spdlog/spdlog.h>
 
 namespace wmr {
 
@@ -24,20 +25,12 @@ cv::Mat FftContext::forward(const cv::Mat& channel) {
     const int rows = channel.rows;
     const int cols = channel.cols;
 
-    // Create complex input (real part = channel data, imag part = 0)
-    cv::Mat complex_in(rows, cols, CV_32FC2);
-    cv::Mat channels_in[2] = {channel.clone(), cv::Mat::zeros(rows, cols, CV_32FC1)};
-    cv::merge(channels_in, 2, complex_in);
-
-    cv::Mat output(rows, cols, CV_32FC2);
-
     PlanKey key{rows, cols, true};
-    auto it = plans_.find(key);
     fftwf_plan plan;
+    auto it = plans_.find(key);
     if (it != plans_.end()) {
         plan = reinterpret_cast<fftwf_plan>(it->second);
     } else {
-        // Use dummy arrays for plan creation — FFTW_MEASURE overwrites them
         cv::Mat dummy_in(rows, cols, CV_32FC2, cv::Scalar(0));
         cv::Mat dummy_out(rows, cols, CV_32FC2);
         plan = fftwf_plan_dft_2d(rows, cols,
@@ -48,7 +41,15 @@ cv::Mat FftContext::forward(const cv::Mat& channel) {
             throw std::runtime_error("FFTW forward plan creation failed");
         }
         plans_[key] = reinterpret_cast<void*>(plan);
+        spdlog::debug("Created forward plan {}x{}: ptr={}", rows, cols, (void*)plan);
     }
+
+    // Create complex input (real part = channel data, imag part = 0)
+    cv::Mat complex_in(rows, cols, CV_32FC2);
+    cv::Mat channels_in[2] = {channel.clone(), cv::Mat::zeros(rows, cols, CV_32FC1)};
+    cv::merge(channels_in, 2, complex_in);
+
+    cv::Mat output(rows, cols, CV_32FC2);
 
     fftwf_execute_dft(plan,
                        reinterpret_cast<fftwf_complex*>(complex_in.ptr<float>()),
@@ -65,15 +66,12 @@ cv::Mat FftContext::inverse(const cv::Mat& complex) {
     const int rows = complex.rows;
     const int cols = complex.cols;
 
-    cv::Mat output = complex.clone();
-
     PlanKey key{rows, cols, false};
-    auto it = plans_.find(key);
     fftwf_plan plan;
+    auto it = plans_.find(key);
     if (it != plans_.end()) {
         plan = reinterpret_cast<fftwf_plan>(it->second);
     } else {
-        // Use dummy arrays for plan creation — FFTW_MEASURE overwrites them
         cv::Mat dummy_in(rows, cols, CV_32FC2, cv::Scalar(0));
         cv::Mat dummy_out(rows, cols, CV_32FC2);
         plan = fftwf_plan_dft_2d(rows, cols,
@@ -84,18 +82,24 @@ cv::Mat FftContext::inverse(const cv::Mat& complex) {
             throw std::runtime_error("FFTW inverse plan creation failed");
         }
         plans_[key] = reinterpret_cast<void*>(plan);
+        spdlog::info("Created inverse plan {}x{}: ptr={}", rows, cols, (void*)plan);
     }
 
+    // Use out-of-place execution to avoid potential in-place issues
+    cv::Mat input_copy = complex.clone();
+    cv::Mat output(rows, cols, CV_32FC2);
+
     fftwf_execute_dft(plan,
-                       reinterpret_cast<fftwf_complex*>(output.ptr<float>()),
+                       reinterpret_cast<fftwf_complex*>(input_copy.ptr<float>()),
                        reinterpret_cast<fftwf_complex*>(output.ptr<float>()));
 
-    // Normalize and extract real part
+    // Normalize
     output /= static_cast<float>(rows * cols);
 
+    // Extract real part
     cv::Mat channels_out[2];
     cv::split(output, channels_out);
-    return channels_out[0];  // real part only
+    return channels_out[0];
 }
 
 cv::Mat FftContext::magnitude(const cv::Mat& complex) {
