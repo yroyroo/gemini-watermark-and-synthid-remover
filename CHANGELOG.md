@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Phase 2: Visible Watermark Detection + Inpainting (In Progress)
+### Phase 2: Visible Watermark Detection + Inpainting — COMPLETE
 
 #### Added
 - `DetectionResult` struct in `src/core/types.hpp` — detection result with confidence scores, region, and per-stage scores
@@ -23,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Navier-Stokes inpaint (cv::inpaint INPAINT_NS)
   - Configurable strength, radius, and padding
 - `opencv_photo` linked for cv::inpaint support
+- WatermarkEngine integration: `detect_watermark()`, `remove_watermark_detected()`, `inpaint_residual()` methods
+- CLI updated: default flow is now detect→remove→inpaint; `--force` skips detection; `--detect-only` reports results
+- Verified: 80% detection confidence on test image, successful removal with Gaussian inpainting (9671 active pixels)
 
 ## [0.1.0] - 2026-05-28
 
