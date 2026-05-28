@@ -1,0 +1,84 @@
+# Build
+build/
+cmake-build-*/
+out/
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.d
+*.dylib
+*.dll
+*.lib
+*.a
+*.so
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake.in
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.xcworkspace/
+*.xcuserdata/
+xcuserdata/
+
+# Compiled Object files
+*.slo
+*.lo
+*.ko
+*.gch
+*.pch
+
+# Fortran module files
+*.mod
+*.smod
+
+# Executables
+*.run
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Test data
+# (test images and videos ARE tracked in git for development)
+
+# Reference data (large datasets)
+*.npz
+reference-images/
+
+# Output
+output/
+results/
+
+# vcpkg
+vcpkg_installed/
