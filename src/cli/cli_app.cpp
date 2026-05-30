@@ -8,6 +8,7 @@
 #include "synthid/noise_residual_subtractor.hpp"
 #include "synthid/codebook_builder.hpp"
 #include "detection/synthid_detector.hpp"
+#include "video/video_processor.hpp"
 
 #include <opencv2/imgcodecs.hpp>
 #include <CLI/CLI.hpp>
@@ -206,6 +207,32 @@ static int process_build_codebook(const CliOptions& opts) {
     return stats.profiles_created > 0 ? 0 : 1;
 }
 
+static int process_video(const CliOptions& opts) {
+    VideoWatermarkConfig config;
+    config.profile = opts.legacy_profile ? VideoWatermarkProfile::VeoLegacy
+                                          : VideoWatermarkProfile::GeminiDiamond;
+    config.variant = opts.video_variant;
+    config.force = opts.force;
+    config.inpaint_strength = opts.inpaint_strength;
+
+    EncodeOptions encode;
+    encode.codec = opts.video_codec;
+    encode.crf = opts.video_crf;
+    encode.preset = opts.video_preset;
+
+    // Default output path: <input>_clean.mp4
+    std::string output = opts.output_path;
+    if (output.empty()) {
+        std::filesystem::path p(opts.input_path);
+        output = (p.parent_path() / (p.stem().string() + "_clean" + p.extension().string())).string();
+    }
+
+    VideoProcessor processor;
+    auto result = processor.process(opts.input_path, output, config, encode);
+
+    return result.success ? 0 : 1;
+}
+
 int run_cli(int argc, char* argv[]) {
     CLI::App app{"Watermark Remover — remove Gemini visible and SynthID invisible watermarks", APP_NAME};
     app.set_version_flag("-V,--version", APP_VERSION);
@@ -288,6 +315,26 @@ int run_cli(int argc, char* argv[]) {
         ->required();
     add_common(build_cmd);
 
+    // --- video ---
+    auto* video_cmd = app.add_subcommand("video", "Remove watermark from video");
+    video_cmd->add_option("input", opts.input_path, "Input video path")
+        ->required()
+        ->check(CLI::ExistingFile);
+    video_cmd->add_option("-o,--output", opts.output_path, "Output path (default: <input>_clean.mp4)");
+    video_cmd->add_flag("--legacy", opts.legacy_profile,
+                         "Use Veo legacy text profile");
+    video_cmd->add_option("--variant", opts.video_variant,
+                           "Force geometry: 720p-1, 720p-2, 1080p");
+    video_cmd->add_flag("-f,--force", opts.force, "Skip detection");
+    video_cmd->add_option("--crf", opts.video_crf, "Encode CRF")
+        ->check(CLI::Range(0, 51));
+    video_cmd->add_option("--preset", opts.video_preset, "Encode preset");
+    video_cmd->add_option("--codec", opts.video_codec, "Video codec");
+    video_cmd->add_option("--inpaint-strength", opts.inpaint_strength,
+                           "Inpaint strength 0.0-1.0")
+        ->check(CLI::Range(0.0f, 1.0f));
+    add_common(video_cmd);
+
     // Default subcommand: if no subcommand given, treat as positional for backward compat
     app.require_subcommand(0, 1);
 
@@ -317,6 +364,8 @@ int run_cli(int argc, char* argv[]) {
         opts.mode = CliMode::SynthidOnly;
     } else if (build_cmd->parsed()) {
         opts.mode = CliMode::BuildCodebook;
+    } else if (video_cmd->parsed()) {
+        opts.mode = CliMode::Video;
     } else {
         opts.mode = CliMode::AutoRemove;
     }
@@ -328,6 +377,9 @@ int run_cli(int argc, char* argv[]) {
 
             case CliMode::BuildCodebook:
                 return process_build_codebook(opts);
+
+            case CliMode::Video:
+                return process_video(opts);
 
             case CliMode::AutoRemove:
             case CliMode::VisibleOnly:
