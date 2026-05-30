@@ -206,10 +206,10 @@ VideoResult VideoProcessor::process(const std::string& input_path,
         reader.seek(0);
     }
 
-    // Open output writer
+    // Open output writer (audio streams set up before MP4 header)
     VideoWriter writer;
     if (!writer.open(output_path, reader.width(), reader.height(),
-                     reader.fps(), encode_opts)) {
+                     reader.fps(), encode_opts, input_path)) {
         result.success = false;
         result.message = fmt::format("Failed to open output: {}", output_path);
         spdlog::error("{}", result.message);
@@ -227,6 +227,16 @@ VideoResult VideoProcessor::process(const std::string& input_path,
         if (frame.empty()) {
             spdlog::warn("Frame {}: empty, skipping", frame_idx);
             writer.write_frame(frame);
+            ++result.frames_skipped;
+            ++frame_idx;
+            continue;
+        }
+
+        // Guard against corrupt frames from seek artifacts
+        if (frame.cols != reader.width() || frame.rows != reader.height()) {
+            spdlog::warn("Frame {}: unexpected dimensions {}x{} (expected {}x{}), skipping",
+                         frame_idx, frame.cols, frame.rows,
+                         reader.width(), reader.height());
             ++result.frames_skipped;
             ++frame_idx;
             continue;
@@ -297,7 +307,7 @@ VideoResult VideoProcessor::process(const std::string& input_path,
     }
 
     // Copy audio
-    if (!writer.copy_audio_from(reader)) {
+    if (!writer.copy_audio()) {
         spdlog::warn("Audio copy failed or no audio stream present");
     }
 

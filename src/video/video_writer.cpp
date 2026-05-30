@@ -1,5 +1,4 @@
 #include "video/video_writer.hpp"
-#include "video/video_reader.hpp"
 
 #include <spdlog/spdlog.h>
 #include <vector>
@@ -22,8 +21,56 @@ VideoWriter::~VideoWriter() {
     close();
 }
 
+bool VideoWriter::setup_audio_streams(const std::string& audio_source) {
+    if (audio_source.empty()) return true;
+
+    AVFormatContext* in_fmt_ctx = nullptr;
+    int ret = avformat_open_input(&in_fmt_ctx, audio_source.c_str(), nullptr, nullptr);
+    if (ret < 0) {
+        spdlog::warn("VideoWriter: cannot open '{}' for audio setup: error {}", audio_source, ret);
+        return true; // Non-fatal — proceed without audio
+    }
+
+    ret = avformat_find_stream_info(in_fmt_ctx, nullptr);
+    if (ret < 0) {
+        spdlog::warn("VideoWriter: cannot find stream info for audio: error {}", ret);
+        avformat_close_input(&in_fmt_ctx);
+        return true;
+    }
+
+    for (unsigned int i = 0; i < in_fmt_ctx->nb_streams; ++i) {
+        if (in_fmt_ctx->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+            continue;
+        }
+
+        AVStream* in_stream = in_fmt_ctx->streams[i];
+        AVStream* out_stream = avformat_new_stream(fmt_ctx_, nullptr);
+        if (!out_stream) {
+            spdlog::error("VideoWriter: failed to create audio output stream");
+            avformat_close_input(&in_fmt_ctx);
+            return false;
+        }
+
+        ret = avcodec_parameters_copy(out_stream->codecpar, in_stream->codecpar);
+        if (ret < 0) {
+            spdlog::error("VideoWriter: failed to copy audio codec params: error {}", ret);
+            avformat_close_input(&in_fmt_ctx);
+            return false;
+        }
+        out_stream->codecpar->codec_tag = 0;
+
+        audio_mappings_.push_back({static_cast<int>(i), static_cast<int>(out_stream->index)});
+        spdlog::info("VideoWriter: audio stream {} -> output stream {}",
+                     i, out_stream->index);
+    }
+
+    avformat_close_input(&in_fmt_ctx);
+    return true;
+}
+
 bool VideoWriter::open(const std::string& path, int width, int height, double fps,
-                       const EncodeOptions& opts) {
+                       const EncodeOptions& opts,
+                       const std::string& audio_source) {
     close();
 
     if (width <= 0 || height <= 0 || fps <= 0.0) {
@@ -32,6 +79,7 @@ bool VideoWriter::open(const std::string& path, int width, int height, double fp
     }
 
     fps_ = fps;
+    audio_source_path_ = audio_source;
 
     // Allocate output format context for MP4
     int ret = avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mp4", path.c_str());
@@ -100,6 +148,12 @@ bool VideoWriter::open(const std::string& path, int width, int height, double fp
         return false;
     }
 
+    // Set up audio streams BEFORE writing the header
+    if (!setup_audio_streams(audio_source)) {
+        close();
+        return false;
+    }
+
     // Open output file
     if (!(fmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
         ret = avio_open(&fmt_ctx_->pb, path.c_str(), AVIO_FLAG_WRITE);
@@ -110,7 +164,7 @@ bool VideoWriter::open(const std::string& path, int width, int height, double fp
         }
     }
 
-    // Write header
+    // Write header — now includes both video and audio streams
     ret = avformat_write_header(fmt_ctx_, nullptr);
     if (ret < 0) {
         spdlog::error("VideoWriter: failed to write header: error {}", ret);
@@ -226,72 +280,41 @@ bool VideoWriter::write_frame(const cv::Mat& frame) {
     return true;
 }
 
-bool VideoWriter::copy_audio_from(VideoReader& reader) {
+bool VideoWriter::copy_audio() {
+    if (audio_mappings_.empty()) {
+        audio_copied_ = true;
+        return true;
+    }
+
     if (!fmt_ctx_ || !header_written_) {
         spdlog::error("VideoWriter: not open, cannot copy audio");
         return false;
     }
 
-    AVFormatContext* in_fmt_ctx = reader.format_context();
-    int in_video_idx = reader.video_stream_index();
-
-    if (!in_fmt_ctx) {
-        spdlog::error("VideoWriter: reader has no format context");
+    if (audio_source_path_.empty()) {
+        spdlog::warn("VideoWriter: no audio source path set");
         return false;
     }
 
-    // Find all audio streams in input and create corresponding output streams
-    struct AudioStreamMapping {
-        int in_stream_idx;
-        int out_stream_idx;
-    };
-    std::vector<AudioStreamMapping> audio_mappings;
-
-    for (unsigned int i = 0; i < in_fmt_ctx->nb_streams; ++i) {
-        if (static_cast<int>(i) == in_video_idx) {
-            continue; // Skip video stream
-        }
-        if (in_fmt_ctx->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
-            continue; // Skip non-audio streams
-        }
-
-        AVStream* in_stream = in_fmt_ctx->streams[i];
-        AVStream* out_stream = avformat_new_stream(fmt_ctx_, nullptr);
-        if (!out_stream) {
-            spdlog::error("VideoWriter: failed to create audio output stream");
-            return false;
-        }
-
-        // Copy codec parameters (stream copy, no re-encoding)
-        int ret = avcodec_parameters_copy(out_stream->codecpar, in_stream->codecpar);
-        if (ret < 0) {
-            spdlog::error("VideoWriter: failed to copy audio codec params: error {}", ret);
-            return false;
-        }
-        out_stream->codecpar->codec_tag = 0;
-
-        audio_mappings.push_back({static_cast<int>(i), static_cast<int>(out_stream->index)});
-        spdlog::info("VideoWriter: mapping audio stream {} -> output stream {}",
-                     i, out_stream->index);
-    }
-
-    if (audio_mappings.empty()) {
-        spdlog::info("VideoWriter: no audio streams found in input");
-        audio_copied_ = true;
-        return true;
-    }
-
-    // Seek input to beginning
-    int ret = av_seek_frame(in_fmt_ctx, -1, 0, AVSEEK_FLAG_BACKWARD);
+    // Open a fresh input context for reading audio packets
+    AVFormatContext* in_fmt_ctx = nullptr;
+    int ret = avformat_open_input(&in_fmt_ctx, audio_source_path_.c_str(), nullptr, nullptr);
     if (ret < 0) {
-        spdlog::warn("VideoWriter: failed to seek input to start (error {}), "
-                     "audio may start from current position", ret);
+        spdlog::error("VideoWriter: failed to open input for audio copy: error {}", ret);
+        return false;
     }
 
-    // Read all packets and copy audio
+    ret = avformat_find_stream_info(in_fmt_ctx, nullptr);
+    if (ret < 0) {
+        spdlog::error("VideoWriter: failed to find stream info for audio: error {}", ret);
+        avformat_close_input(&in_fmt_ctx);
+        return false;
+    }
+
     AVPacket* read_pkt = av_packet_alloc();
     if (!read_pkt) {
         spdlog::error("VideoWriter: failed to allocate read packet");
+        avformat_close_input(&in_fmt_ctx);
         return false;
     }
 
@@ -307,10 +330,8 @@ bool VideoWriter::copy_audio_from(VideoReader& reader) {
             break;
         }
 
-        // Check if this packet belongs to a mapped audio stream
-        for (const auto& mapping : audio_mappings) {
+        for (const auto& mapping : audio_mappings_) {
             if (read_pkt->stream_index == mapping.in_stream_idx) {
-                // Rescale timestamps from input stream to output stream
                 AVStream* in_s = in_fmt_ctx->streams[mapping.in_stream_idx];
                 AVStream* out_s = fmt_ctx_->streams[mapping.out_stream_idx];
 
@@ -332,6 +353,7 @@ bool VideoWriter::copy_audio_from(VideoReader& reader) {
     }
 
     av_packet_free(&read_pkt);
+    avformat_close_input(&in_fmt_ctx);
 
     spdlog::info("VideoWriter: copied {} audio packets", audio_packets_written);
     audio_copied_ = true;
@@ -390,6 +412,8 @@ void VideoWriter::close() {
     pts_counter_ = 0;
     fps_ = 0.0;
     audio_copied_ = false;
+    audio_mappings_.clear();
+    audio_source_path_.clear();
 }
 
 } // namespace wmr

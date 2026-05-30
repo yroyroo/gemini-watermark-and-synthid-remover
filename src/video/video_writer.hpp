@@ -15,8 +15,6 @@ struct AVFrame;
 
 namespace wmr {
 
-class VideoReader;
-
 struct EncodeOptions {
     std::string codec = "libx264";
     int crf = 14;
@@ -33,13 +31,19 @@ public:
     VideoWriter(const VideoWriter&) = delete;
     VideoWriter& operator=(const VideoWriter&) = delete;
 
+    // Opens output, sets up video encoder. If audio_source is non-empty,
+    // reads audio stream info from that file and creates output audio streams
+    // BEFORE writing the MP4 header (required for valid MP4).
     bool open(const std::string& path, int width, int height, double fps,
-              const EncodeOptions& opts = {});
+              const EncodeOptions& opts = {},
+              const std::string& audio_source = "");
     bool write_frame(const cv::Mat& frame);
-    bool copy_audio_from(VideoReader& reader);
+    bool copy_audio();
     void close();
 
 private:
+    bool setup_audio_streams(const std::string& audio_source);
+
     AVFormatContext* fmt_ctx_ = nullptr;
     AVCodecContext* codec_ctx_ = nullptr;
     SwsContext* sws_ctx_ = nullptr;
@@ -50,6 +54,13 @@ private:
     double fps_ = 0.0;
     bool header_written_ = false;
     bool audio_copied_ = false;
+    std::string audio_source_path_;
+
+    struct AudioMapping {
+        int in_stream_idx;
+        int out_stream_idx;
+    };
+    std::vector<AudioMapping> audio_mappings_;
 };
 
 } // namespace wmr
