@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 6: Video Watermark Removal + CLI Polish — COMPLETE
+
+#### Added
+- `VideoReader` class (`src/video/video_reader.hpp/cpp`) — FFmpeg demux+decode pipeline with seeking and frame counting
+- `VideoWriter` class (`src/video/video_writer.hpp/cpp`) — FFmpeg encode pipeline (libx264, CRF 14, High profile) with audio passthrough:
+  - Audio streams created before MP4 header write (valid moov atom)
+  - Fresh input context for audio packet copy with timestamp rescaling
+  - BGR24→YUV420P colorspace conversion via swscale
+- `VideoProcessor` class (`src/video/video_processor.hpp/cpp`) — frame-by-frame watermark removal:
+  - Shot-level NCC detection: samples frames across first 90% of video, takes median position/confidence
+  - Per-frame occlusion gate: skips frames where watermark not reliably detected
+  - Position refinement: falls back to shot anchor if detection drifts beyond tolerance
+  - Frame dimension guard against corrupt seek artifacts
+  - Progress output with fps and ETA
+- `video` CLI subcommand: `wmr video input.mp4 -o output.mp4` with `--legacy`, `--variant`, `--crf`, `--preset`, `--codec`, `--force` options
+- Codebook-free SynthID removal via `NoiseResidualSubtractor` (`src/synthid/noise_residual_subtractor.hpp/cpp`):
+  - Estimates carrier from bilateral filter noise residual
+  - `--codebook-free` flag as alternative to `--codebook`
+- `cmake/FindFFMPEG.cmake` — cross-platform FFmpeg discovery via pkg-config / FFMPEG_ROOT (covers Homebrew and system package managers)
+- CLI header with version, description, GitHub URL, and copyright
+- Contextual subcommand help: shows subcommand-specific help when required args are missing (e.g. `wmr video`)
+- Version output includes GitHub URL
+
+#### Changed
+- CMake links FFmpeg via imported targets (`FFMPEG::avformat` etc.) instead of variable-based linking
+- `vcpkg.json` version bumped to 0.2.0
+- Project version bumped to 0.2.0
+
 ### Phase 5: Unified CLI + Test Suite — COMPLETE
 
 #### Added

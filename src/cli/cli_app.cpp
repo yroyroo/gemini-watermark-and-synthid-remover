@@ -15,6 +15,7 @@
 #include <spdlog/spdlog.h>
 #include <fmt/format.h>
 #include <filesystem>
+#include <iostream>
 
 #ifndef APP_VERSION
 #define APP_VERSION "0.2.0"
@@ -23,6 +24,18 @@
 #ifndef APP_NAME
 #define APP_NAME "wmr"
 #endif
+
+namespace {
+void print_header(std::ostream& os) {
+    os << "--------------------------------------------\n"
+        << "  wmr v" APP_VERSION " — watermark remover\n"
+        << "  Remove Gemini/Veo visible watermarks\n"
+        << "  and SynthID invisible watermarks\n"
+        << "  https://github.com/froggeric/gemini-watermark-and-synthid-remover\n"
+        << "  Copyright 2026 Frederic Guigand\n"
+        << "--------------------------------------------\n\n";
+}
+} // namespace
 
 namespace wmr {
 
@@ -234,13 +247,14 @@ static int process_video(const CliOptions& opts) {
 }
 
 int run_cli(int argc, char* argv[]) {
-    CLI::App app{"wmr — remove Gemini/Veo visible watermarks and SynthID invisible watermarks\n"
-                 "Copyright 2026 Frédéric Guigand", APP_NAME};
-    app.set_version_flag("-V,--version", APP_VERSION);
+    CLI::App app{"", APP_NAME};
+    app.set_version_flag("-V,--version",
+        std::string(APP_VERSION) + "\nhttps://github.com/froggeric/gemini-watermark-and-synthid-remover");
     app.fallthrough();
 
     // Show help when called with no arguments
     if (argc <= 1) {
+        print_header(std::cout);
         std::cout << app.help() << std::endl;
         return 0;
     }
@@ -348,6 +362,14 @@ int run_cli(int argc, char* argv[]) {
     try {
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
+        // If a subcommand was parsed but failed on missing required args,
+        // show the subcommand help instead of a bare error.
+        auto subs = app.get_subcommands();
+        if (!subs.empty()) {
+            print_header(std::cout);
+            std::cout << subs.front()->help() << std::endl;
+            return 1;
+        }
         return app.exit(e);
     }
 

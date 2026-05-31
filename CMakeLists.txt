@@ -3,6 +3,7 @@ project(wmr VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # Sources
 set(SOURCES
@@ -55,10 +56,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     CLI11::CLI11
     spdlog::spdlog
     ${FFTW3f_LIBRARIES}
-    ${FFMPEG_LIBRARIES}
+    FFMPEG::avformat
+    FFMPEG::avcodec
+    FFMPEG::avutil
+    FFMPEG::swscale
 )
-target_include_directories(${PROJECT_NAME} PRIVATE ${FFTW3f_INCLUDE_DIRS} ${FFMPEG_INCLUDE_DIRS})
-target_link_directories(${PROJECT_NAME} PRIVATE ${FFTW3f_LIBRARY_DIRS} ${FFMPEG_LIBRARY_DIRS})
+target_include_directories(${PROJECT_NAME} PRIVATE ${FFTW3f_INCLUDE_DIRS})
+target_link_directories(${PROJECT_NAME} PRIVATE ${FFTW3f_LIBRARY_DIRS})
 
 # Platform-specific flags
 if(APPLE)
