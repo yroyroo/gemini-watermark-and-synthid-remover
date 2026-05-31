@@ -16,7 +16,7 @@ jobs:
         include:
           - os: macos-14
             artifact: wmr-macos-arm64
-          - os: macos-13
+          - os: macos-15
             artifact: wmr-macos-x86_64
           - os: ubuntu-latest
             artifact: wmr-linux-x86_64
