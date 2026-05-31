@@ -34,7 +34,7 @@ jobs:
 
       - uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'a34c873a9717a888f58dc05268dea4da424c6b07'
+          vcpkgGitCommitId: 'f9ffbaa46ad8e284b2b74919f7e0ba259564d424'
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
