@@ -83,15 +83,15 @@ if(APPLE)
         ${AUDIOTOOLBOX_LIB}
         ${ACCELERATE_LIB}
     )
-    # x264 is a transitive dependency of FFmpeg's libx264 codec
-    find_package(PkgConfig QUIET)
-    if(PkgConfig_FOUND)
-        pkg_check_modules(X264 QUIET x264)
-    endif()
+endif()
+
+# x264 is a transitive dependency of FFmpeg's libx264 codec (static linking)
+find_library(X264_LIBRARY NAMES x264 PATHS ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib NO_DEFAULT_PATH)
+if(NOT X264_LIBRARY)
     find_library(X264_LIBRARY NAMES x264)
-    if(X264_LIBRARY)
-        target_link_libraries(${PROJECT_NAME} PRIVATE ${X264_LIBRARY})
-    endif()
+endif()
+if(X264_LIBRARY)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${X264_LIBRARY})
 endif()
 
 # Platform-specific flags
