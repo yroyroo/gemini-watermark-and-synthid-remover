@@ -182,13 +182,11 @@ static int process_single_image(const CliOptions& opts) {
     }
 
     // Save output
-    std::string output;
-    if (!opts.output_path.empty()) {
-        output = opts.output_path;
-    } else {
-        std::filesystem::path p(opts.input_path);
-        output = (p.parent_path() / (p.stem().string() + "_clean" + p.extension().string())).string();
+    if (opts.output_path.empty()) {
+        spdlog::error("No output path specified. Use -o <path> to set the output file.");
+        return 1;
     }
+    std::string output = opts.output_path;
     std::filesystem::path out_path(output);
     if (!out_path.parent_path().empty() && !std::filesystem::exists(out_path.parent_path())) {
         std::filesystem::create_directories(out_path.parent_path());
@@ -291,7 +289,7 @@ int run_cli(int argc, char* argv[]) {
                            "Inpaint strength 0.0-1.0")
         ->check(CLI::Range(0.0f, 1.0f));
     remove_cmd->add_flag("-r,--recursive", opts.recursive, "Process directories recursively");
-    remove_cmd->add_option("-o,--output", opts.output_path, "Output path");
+    remove_cmd->add_option("-o,--output", opts.output_path, "Output path (required for files; batch defaults to cleaned/)");
     add_common(remove_cmd);
 
     // --- detect ---
@@ -313,7 +311,7 @@ int run_cli(int argc, char* argv[]) {
     visible_cmd->add_option("--inpaint-strength", opts.inpaint_strength,
                             "Inpaint strength 0.0-1.0")
         ->check(CLI::Range(0.0f, 1.0f));
-    visible_cmd->add_option("-o,--output", opts.output_path, "Output path");
+    visible_cmd->add_option("-o,--output", opts.output_path, "Output path (required)");
     add_common(visible_cmd);
 
     // --- synthid ---
@@ -330,7 +328,7 @@ int run_cli(int argc, char* argv[]) {
     synthid_cmd->add_option("--synthid-strength", opts.synthid_strength,
                             "SynthID removal strength 0.0-2.0")
         ->check(CLI::Range(0.0f, 2.0f));
-    synthid_cmd->add_option("-o,--output", opts.output_path, "Output path");
+    synthid_cmd->add_option("-o,--output", opts.output_path, "Output path (required)");
     add_common(synthid_cmd);
 
     // --- build-codebook ---
