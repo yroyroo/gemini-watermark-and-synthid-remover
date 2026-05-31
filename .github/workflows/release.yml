@@ -16,16 +16,12 @@ jobs:
         include:
           - os: macos-14
             artifact: wmr-macos-arm64
-            cache-key: macos-arm64
           - os: macos-13
             artifact: wmr-macos-x86_64
-            cache-key: macos-x86_64
           - os: ubuntu-latest
             artifact: wmr-linux-x86_64
-            cache-key: linux-x86_64
           - os: windows-latest
             artifact: wmr-windows-x86_64.exe
-            cache-key: windows-x86_64
 
     runs-on: ${{ matrix.os }}
 
@@ -34,21 +30,29 @@ jobs:
 
       - uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'f9ffbaa46ad8e284b2b74919f7e0ba259564d424'
+          runVcpkgInstall: true
+
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
         run: |
           cmake -B build -S . -GNinja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DWMR_BUILD_TESTS=OFF
+            -DWMR_BUILD_TESTS=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: |
           cmake -B build -S . `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
-            -DWMR_BUILD_TESTS=OFF
+            -DWMR_BUILD_TESTS=OFF `
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }}
