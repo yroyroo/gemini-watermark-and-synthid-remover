@@ -88,7 +88,7 @@ endif()
 # Windows system libraries required by FFmpeg
 if(WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE
-        ws2_32 crypt32 bcrypt secur32 mfplat mfuuid strmiids
+        ws2_32 crypt32 bcrypt secur32 ncrypt mfplat mfuuid strmiids
     )
 endif()
 
