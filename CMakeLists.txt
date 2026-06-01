@@ -103,6 +103,9 @@ elseif(UNIX)
 elseif(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /utf-8)
     target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+    if(VCPKG_TARGET_TRIPLET MATCHES "static")
+        set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    endif()
 endif()
 
 # Release optimizations

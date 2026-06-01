@@ -22,6 +22,7 @@ jobs:
             artifact: wmr-linux-x86_64
           - os: windows-latest
             artifact: wmr-windows-x86_64.exe
+            vcpkg_triplet: x64-windows-static
 
     runs-on: ${{ matrix.os }}
 
@@ -37,6 +38,7 @@ jobs:
       - uses: lukka/run-vcpkg@v11
         with:
           runVcpkgInstall: true
+          vcpkgJsonGlob: '**/vcpkg.json'
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
@@ -52,6 +54,7 @@ jobs:
           cmake -B build -S . `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
             -DWMR_BUILD_TESTS=OFF `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
             -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build
