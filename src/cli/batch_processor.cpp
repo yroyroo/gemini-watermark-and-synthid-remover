@@ -68,7 +68,13 @@ static int process_single(const fs::path& input, const CliOptions& opts) {
                                                      nullptr, v, snap);
             if (!detection.detected) return false;
             const cv::Mat& alpha = engine.get_still_alpha(detection.size, v);
-            engine.remove_watermark_detected(image, detection, opts.inpaint_strength, &alpha);
+            InpaintConfig icfg;
+            bool do_cleanup = resolve_inpaint_config(opts, icfg);
+            if (do_cleanup) {
+                engine.remove_watermark_detected(image, detection, icfg, &alpha);
+            } else {
+                engine.remove_watermark_alpha_only(image, detection, &alpha);
+            }
             return true;
         };
 

@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "core/types.hpp"
+#include "core/inpaint.hpp"
 
 namespace wmr {
 
@@ -42,6 +43,17 @@ struct CliOptions {
     int video_crf = 14;
     std::string video_preset = "slow";
     std::string video_codec = "libx264";
+    // AI denoise knobs (always present; only bound to CLI flags when WMR_AI_DENOISE).
+    // denoise_method default: "ai" when built with AI, else "soft" (Gaussian).
+    std::string denoise_method =
+#ifdef WMR_AI_DENOISE
+        "ai";
+#else
+        "soft";
+#endif
+    float denoise_sigma = 50.0f;        // --sigma 1-150
+    float denoise_strength_pct = 120.0f; // --strength 0-300 (percent; /100 internally)
+    int denoise_radius = 10;            // --radius 1-25
 };
 
 // Resolve the still-image profile variant from CLI flags.
@@ -51,6 +63,11 @@ struct CliOptions {
 //   (neither)     → {nullopt, true}  (default V2 with auto V2→V1 fallback)
 std::pair<std::optional<WatermarkVariant>, bool>
 resolve_still_variant(const CliOptions& opts);
+
+// Resolve the residual-cleanup InpaintConfig from CLI opts (shared by the single-
+// image and batch paths). Returns false when the user chose "--denoise off"
+// (the caller then skips cleanup, reverse-blending only).
+bool resolve_inpaint_config(const CliOptions& opts, InpaintConfig& out);
 
 int run_cli(int argc, char* argv[]);
 

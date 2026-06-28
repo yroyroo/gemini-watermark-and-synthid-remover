@@ -235,7 +235,7 @@ void WatermarkEngine::remove_watermark(cv::Mat& image,
 void WatermarkEngine::remove_watermark_detected(
     cv::Mat& image,
     const DetectionResult& detection,
-    float inpaint_strength,
+    const InpaintConfig& cfg,
     const cv::Mat* custom_alpha)
 {
     if (image.empty()) return;
@@ -254,23 +254,25 @@ void WatermarkEngine::remove_watermark_detected(
 
     remove_watermark_alpha_blend(image, alpha_map, pos, logo_value_);
 
-    // Residual cleanup: AI denoise (default when built) with Gaussian fallback.
-    InpaintConfig icfg;
-    icfg.strength = inpaint_strength;
+    // Residual cleanup. "--denoise off" is represented as the (non-AI) caller
+    // skipping this call entirely; the engine never sees an "off" method here.
 #ifdef WMR_AI_DENOISE
-    if (icfg.method == InpaintMethod::AiDenoise) {
+    if (cfg.method == InpaintMethod::AiDenoise) {
         NcnnDenoiser& d = denoiser();  // lazy process-wide singleton
         if (!d.is_ready()) d.initialize();
         if (d.is_ready()) {
             d.denoise(image, detection.region, alpha_map,
-                      icfg.sigma, icfg.strength, icfg.padding);
+                      cfg.sigma, cfg.strength, cfg.padding);
             return;  // AI did the cleanup; skip software inpaint
         }
         spdlog::warn("AI denoise unavailable - falling back to Gaussian");
-        icfg.method = InpaintMethod::Gaussian;
+        InpaintConfig fallback = cfg;
+        fallback.method = InpaintMethod::Gaussian;
+        inpaint_residual(image, detection.region, fallback, custom_alpha);
+        return;
     }
 #endif
-    inpaint_residual(image, detection.region, icfg, custom_alpha);
+    inpaint_residual(image, detection.region, cfg, custom_alpha);
 }
 
 void WatermarkEngine::remove_watermark_alpha_only(

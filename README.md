@@ -199,6 +199,43 @@ SynthID invisible watermarks are embedded via a neural encoder in the frequency 
 
 **Limitations:** Both approaches are effective on uniform/dark images where the carrier signal is dominant. On content-rich images, the carrier energy is <0.1% of total spectral energy, making reliable removal difficult.
 
+### AI Denoise (optional)
+
+An optional FDnCNN denoiser (NCNN + Vulkan, with CPU fallback) can replace the hand-crafted Gaussian/TELEA/NS cleanup as a learned residual-cleanup method after reverse alpha blending. It is **OFF by default**; the standard build is lean and AI-free.
+
+```bash
+# Build with AI (macOS/Homebrew): needs vulkan-volk + molten-vk
+brew install vulkan-volk molten-vk
+WMR_AI_DENOISE=1 ./scripts/build.sh
+
+# Or via vcpkg (the ai-denoise manifest feature pulls volk + Vulkan headers):
+git submodule update --init --recursive
+cmake -B build-ai -S . -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DWMR_BUILD_AI_DENOISE=ON -DVCPKG_MANIFEST_FEATURES="ai-denoise" \
+  -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+cmake --build build-ai
+```
+
+When built, AI is the **default** cleanup (with automatic Gaussian fallback on GPU/CPU init failure). GPU is used when a Vulkan loader is present (MoltenVK on macOS); otherwise it runs on CPU.
+
+```bash
+wmr remove input.png --denoise ai   -o out.png      # AI denoise (default when built)
+wmr remove input.png --denoise soft -o out.png      # Gaussian (pre-AI default)
+wmr remove input.png --denoise off  -o out.png      # reverse-blend only, no cleanup
+wmr remove input.png --sigma 75 --strength 150 -o out.png   # tune
+```
+
+| Flag | Range | Default | Notes |
+|------|-------|---------|-------|
+| `--denoise` | `ai\|soft\|ns\|telea\|off` | `ai` (when built) | Cleanup method; `off` skips cleanup |
+| `--sigma` | 1–150 | 50 | FDnCNN noise level (AI only) |
+| `--strength` | 0–300 % | 120 | Cleanup strength (`/100` internally) |
+| `--radius` | 1–25 | 10 | Gaussian/TELEA/NS radius |
+
+These flags are only present when built with `WMR_BUILD_AI_DENOISE=ON`; the lean build exposes only `--inpaint-strength`.
+
+**Release binaries:** the default release ships lean, AI-free binaries (`wmr-macos-arm64`, `wmr-macos-x86_64`, `wmr-linux-x86_64`, `wmr-windows-x86_64.exe`). A separate `wmr-macos-arm64-ai` artifact (macOS arm64) bundles the AI denoiser; its third-party licenses are in `LICENSE-AI.md` (NCNN, volk, KAIR/FDnCNN).
+
 ## Dependencies
 
 | Library | Purpose |
@@ -216,9 +253,12 @@ SynthID invisible watermarks are embedded via a neural encoder in the frequency 
 
 This project builds on research and techniques from:
 
-- [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool) — reverse alpha blending, NCC detection, inpainting (by Allen Kuo)
+- [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool) — reverse alpha blending, NCC detection, inpainting, FDnCNN AI denoise conversion (by Allen Kuo)
 - [VeoWatermarkRemover](https://github.com/allenk/VeoWatermarkRemover) — video watermark removal, variant geometry calibration (by Allen Kuo)
 - [reverse-SynthID](https://github.com/aloshdenny/reverse-SynthID) — SynthID spectral analysis research
+- [KAIR / FDnCNN](https://github.com/csjcai/KAIR) — FDnCNN denoising model (MIT), used by the optional AI denoise
+- [Tencent/ncnn](https://github.com/Tencent/ncnn) — NCNN neural-network inference framework (BSD-3-Clause), used by the optional AI denoise
+- [zeux/volk](https://github.com/zeux/volk) — Vulkan meta-loader (MIT), used by the optional AI denoise
 
 ## License
 

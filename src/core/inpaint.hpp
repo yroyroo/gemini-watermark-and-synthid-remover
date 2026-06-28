@@ -24,9 +24,7 @@ struct InpaintConfig {
     int radius = 10;
     int padding = 32;
     bool full_mask = false;  // use full alpha region as inpaint mask (vs gradient edges)
-#ifdef WMR_AI_DENOISE
-    float sigma = 50.0f;  // FDnCNN sigma (1-150); unused by Gaussian/Telea/NS
-#endif
+    float sigma = 50.0f;     // FDnCNN sigma (1-150); unused by Gaussian/Telea/NS
 };
 
 void inpaint_residual(

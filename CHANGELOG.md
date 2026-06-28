@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] - 2026-06-28
+
+### FDnCNN AI Denoise (optional) — Still-Image Residual Cleanup
+
+#### Added
+- FDnCNN AI denoiser (NCNN + Vulkan, CPU fallback) as an optional residual-cleanup method after reverse alpha blending, ported from allenk/GeminiWatermarkTool (MIT). Original model from cszn/KAIR (MIT).
+- `WMR_BUILD_AI_DENOISE` CMake option (OFF by default) — when ON, AI is the default still-image cleanup with automatic Gaussian fallback on init failure.
+- `NcnnDenoiser` module (`src/core/ai_denoise.{hpp,cpp}`) + `src/core/ai_denoise_model.cpp` + `src/core/ncnn_shim.hpp`, all `#ifdef WMR_AI_DENOISE`-guarded.
+- `--denoise {ai|soft|ns|telea|off}`, `--sigma`, `--strength`, `--radius` flags on `remove`/`visible` (AI-only; absent from the lean OFF build, which keeps `--inpaint-strength` as the sole cleanup knob).
+- `WatermarkEngine::remove_watermark_detected` `InpaintConfig` overload (the `float` overload forwards for backward compatibility).
+- `InpaintMethod::AiDenoise` (guarded in-enum); `InpaintConfig::sigma`.
+- `[aidenoise]` ctest tag (model load, synthetic residual, masked blend, Gaussian fallback) — runs only on the ON build.
+- New `LICENSE-AI.md` at repo root (NCNN BSD-3-Clause + volk MIT + KAIR/FDnCNN MIT + allenk conversion credit) shipped with the AI binary.
+- New `ai-denoise` CI job producing the `wmr-macos-arm64-ai` release artifact (macOS arm64 only for the first AI release; x86_64/Linux/Windows AI builds are future work).
+
+#### Build
+- NCNN built from a git submodule at `external/ncnn/ncnn-20260113-src`; volk supplied by the vcpkg `ai-denoise` manifest feature (NOT a default dependency — lean binaries stay AI-free).
+- Adds ~6.8 MB of embedded-model headers (`assets/model_core.{mem.h,id.h}`), committed so the AI CI job builds from a clean checkout without a network fetch. Provenance: headers captured from a one-time allenk/GeminiWatermarkTool `ENABLE_AI_DENOISE=ON` build (its `ncnn2mem` step); model bytes are upstream's converted weights.
+- `scripts/build.sh` AI mode: `WMR_AI_DENOISE=1` (inits the submodule, adds the `vulkan-volk`/`molten-vk` Homebrew deps, passes `-DWMR_BUILD_AI_DENOISE=ON`).
+- The 4-job default release matrix is untouched and AI-free (R7): no submodules, no `WMR_BUILD_AI_DENOISE`, no `ai-denoise` vcpkg feature.
+
+#### Out of scope
+- Video AI denoise — the video pipeline stays alpha-only (no inpaint, no AI).
+
 ## [1.2.0] - 2026-06-27
 
 ### Still-Image V2 (Gemini 3.5) Watermark Parity

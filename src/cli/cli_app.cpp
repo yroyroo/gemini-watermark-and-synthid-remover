@@ -46,6 +46,28 @@ resolve_still_variant(const CliOptions& opts) {
     return {std::nullopt, true};  // default: V2 with auto V2→V1 fallback
 }
 
+// Resolve the residual-cleanup InpaintConfig from CLI opts.
+// Returns false when the user chose "--denoise off" (skip cleanup entirely).
+// method mapping: soft→Gaussian, ns→NavierStrokes, telea→Telea, ai→AiDenoise,
+// off→(caller skips). strength is stored as percent (0-300) and divided here.
+bool resolve_inpaint_config(const CliOptions& opts, InpaintConfig& out) {
+    out.strength = opts.denoise_strength_pct / 100.0f;
+    out.radius = opts.denoise_radius;
+    out.sigma = opts.denoise_sigma;
+    out.padding = 32;
+    const std::string& m = opts.denoise_method;
+    if (m == "off")  return false;  // skip cleanup entirely (reverse-blend only)
+    if (m == "soft") { out.method = InpaintMethod::Gaussian;      return true; }
+    if (m == "ns")   { out.method = InpaintMethod::NavierStokes; return true; }
+    if (m == "telea"){ out.method = InpaintMethod::Telea;         return true; }
+#ifdef WMR_AI_DENOISE
+    if (m == "ai")   { out.method = InpaintMethod::AiDenoise;     return true; }
+#endif
+    // Unknown / unreachable (CLI11 IsMember validates choices) → Gaussian.
+    out.method = InpaintMethod::Gaussian;
+    return true;
+}
+
 static int process_detect(const CliOptions& opts) {
     cv::Mat image = cv::imread(opts.input_path, cv::IMREAD_COLOR);
     if (image.empty()) {
@@ -141,7 +163,14 @@ static int process_single_image(const CliOptions& opts) {
                          detection.confidence * 100.0f,
                          v == WatermarkVariant::V1 ? "V1" : "V2");
             const cv::Mat& alpha = engine.get_still_alpha(detection.size, v);
-            engine.remove_watermark_detected(image, detection, opts.inpaint_strength, &alpha);
+            InpaintConfig icfg;
+            bool do_cleanup = resolve_inpaint_config(opts, icfg);
+            if (do_cleanup) {
+                engine.remove_watermark_detected(image, detection, icfg, &alpha);
+            } else {
+                // --denoise off: reverse-blend only, no residual cleanup.
+                engine.remove_watermark_alpha_only(image, detection, &alpha);
+            }
             return true;
         };
 
@@ -356,6 +385,21 @@ int run_cli(int argc, char* argv[]) {
     remove_cmd->add_option("--inpaint-strength", opts.inpaint_strength,
                            "Inpaint strength 0.0-1.0")
         ->check(CLI::Range(0.0f, 1.0f));
+#ifdef WMR_AI_DENOISE
+    remove_cmd->add_option("--denoise", opts.denoise_method,
+                           "Residual cleanup method: ai|soft|ns|telea|off "
+                           "(ai = FDnCNN AI denoise, soft = Gaussian)")
+        ->check(CLI::IsMember({"ai", "soft", "ns", "telea", "off"}));
+    remove_cmd->add_option("--sigma", opts.denoise_sigma,
+                           "AI denoise noise level 1-150 (default 50)")
+        ->check(CLI::Range(1.0f, 150.0f));
+    remove_cmd->add_option("--strength", opts.denoise_strength_pct,
+                           "Cleanup strength 0-300 percent (default 120)")
+        ->check(CLI::Range(0.0f, 300.0f));
+    remove_cmd->add_option("--radius", opts.denoise_radius,
+                           "Inpaint radius 1-25 (default 10)")
+        ->check(CLI::Range(1, 25));
+#endif
     remove_cmd->add_flag("-r,--recursive", opts.recursive, "Process directories recursively");
     remove_cmd->add_option("-o,--output", opts.output_path, "Output path (required for files; batch defaults to cleaned/)");
     add_common(remove_cmd);
@@ -387,6 +431,21 @@ int run_cli(int argc, char* argv[]) {
     visible_cmd->add_option("--inpaint-strength", opts.inpaint_strength,
                             "Inpaint strength 0.0-1.0")
         ->check(CLI::Range(0.0f, 1.0f));
+#ifdef WMR_AI_DENOISE
+    visible_cmd->add_option("--denoise", opts.denoise_method,
+                            "Residual cleanup method: ai|soft|ns|telea|off "
+                            "(ai = FDnCNN AI denoise, soft = Gaussian)")
+        ->check(CLI::IsMember({"ai", "soft", "ns", "telea", "off"}));
+    visible_cmd->add_option("--sigma", opts.denoise_sigma,
+                            "AI denoise noise level 1-150 (default 50)")
+        ->check(CLI::Range(1.0f, 150.0f));
+    visible_cmd->add_option("--strength", opts.denoise_strength_pct,
+                            "Cleanup strength 0-300 percent (default 120)")
+        ->check(CLI::Range(0.0f, 300.0f));
+    visible_cmd->add_option("--radius", opts.denoise_radius,
+                            "Inpaint radius 1-25 (default 10)")
+        ->check(CLI::Range(1, 25));
+#endif
     visible_cmd->add_option("-o,--output", opts.output_path, "Output path (required)");
     add_common(visible_cmd);
 

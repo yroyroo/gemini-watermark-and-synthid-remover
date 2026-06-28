@@ -50,6 +50,15 @@ Single-pass C++20 CLI tool. No libraries — everything compiles into one `wmr` 
 2. **Reverse alpha blend** (core/blend_modes) — `original = (watermarked - alpha*255) / (1-alpha)`. Alpha maps decoded from embedded PNGs (assets/embedded_assets.hpp).
 3. **Inpaint** (core/inpaint) — Gaussian soft blend (default), TELEA, or Navier-Stokes. Cleans residual artifacts.
 
+### AI Denoise (optional, OFF by default)
+
+An FDnCNN denoiser (`src/core/ai_denoise.{hpp,cpp}`, NCNN + Vulkan, CPU fallback) is an optional residual-cleanup method, gated on `WMR_BUILD_AI_DENOISE`. When built (ON), AI is the **default** still-image cleanup and transparently falls back to Gaussian on init failure; the lean OFF build is provably AI-free.
+
+- **Build:** `WMR_AI_DENOISE=1 ./scripts/build.sh` (inits the NCNN submodule + checks `vulkan-volk`/`molten-vk`). CI uses the vcpkg `ai-denoise` manifest feature (`volk`) — no Vulkan SDK install. NCNN is a git submodule; volk comes from vcpkg.
+- **CLI (ON only):** `--denoise {ai|soft|ns|telea|off}`, `--sigma` (1–150), `--strength` (0–300 %), `--radius` (1–25) on `remove`/`visible`. `--denoise off` skips cleanup (reverse-blend only). OFF build has none of these — `--inpaint-strength` remains the only knob.
+- **Dispatch:** `WatermarkEngine::remove_watermark_detected` takes an `InpaintConfig` overload (the `float` overload forwards). AI dispatches in the engine (engine-level, not in `inpaint.cpp`) — keeps ncnn headers out of the inpaint TU. All AI symbols are `#ifdef WMR_AI_DENOISE`-guarded so the OFF build compiles with zero AI knowledge.
+- **Release:** a separate `ai-denoise` CI job ships `wmr-macos-arm64-ai` (macOS arm64 only) with `LICENSE-AI.md`; the 4 default lean binaries stay AI-free.
+
 ### SynthID Removal (two strategies)
 
 Both operate in the frequency domain via `FftContext` (FFTW3 wrapper with plan caching):
