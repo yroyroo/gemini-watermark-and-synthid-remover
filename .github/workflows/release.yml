@@ -99,13 +99,20 @@ jobs:
           runVcpkgInstall: true
           vcpkgJsonGlob: '**/vcpkg.json'
 
+      - name: Install MoltenVK (Vulkan loader)
+        # NCNN's NCNN_VULKAN=ON requires Vulkan_LIBRARY (libvulkan) at configure
+        # time. The bare macOS runner has no Vulkan loader; MoltenVK provides it.
+        run: brew install molten-vk
+
       - name: Configure (AI)
         run: |
+          VKLIB="$(brew --prefix molten-vk)/lib/libvulkan.dylib"
           cmake -B build -S . -GNinja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DWMR_BUILD_TESTS=OFF \
             -DWMR_BUILD_AI_DENOISE=ON \
             -DVCPKG_MANIFEST_FEATURES="ai-denoise" \
+            -DVulkan_LIBRARY="$VKLIB" \
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
       - name: Build
