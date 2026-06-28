@@ -8,14 +8,25 @@ enum class InpaintMethod {
     Gaussian,
     Telea,
     NavierStokes
+#ifdef WMR_AI_DENOISE
+    , AiDenoise  // FDnCNN NCNN/Vulkan AI denoise (dispatched by WatermarkEngine)
+#endif
 };
 
 struct InpaintConfig {
     float strength = 0.85f;
-    InpaintMethod method = InpaintMethod::Gaussian;
+    InpaintMethod method =
+#ifdef WMR_AI_DENOISE
+        InpaintMethod::AiDenoise;  // AI denoise is the default cleanup when built
+#else
+        InpaintMethod::Gaussian;
+#endif
     int radius = 10;
     int padding = 32;
     bool full_mask = false;  // use full alpha region as inpaint mask (vs gradient edges)
+#ifdef WMR_AI_DENOISE
+    float sigma = 50.0f;  // FDnCNN sigma (1-150); unused by Gaussian/Telea/NS
+#endif
 };
 
 void inpaint_residual(

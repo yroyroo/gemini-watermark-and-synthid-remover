@@ -2,6 +2,9 @@
 #include "core/blend_modes.hpp"
 #include "core/inpaint.hpp"
 #include "detection/ncc_detector.hpp"
+#ifdef WMR_AI_DENOISE
+#include "core/ai_denoise.hpp"
+#endif
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -251,9 +254,22 @@ void WatermarkEngine::remove_watermark_detected(
 
     remove_watermark_alpha_blend(image, alpha_map, pos, logo_value_);
 
-    // Inpaint residuals
+    // Residual cleanup: AI denoise (default when built) with Gaussian fallback.
     InpaintConfig icfg;
     icfg.strength = inpaint_strength;
+#ifdef WMR_AI_DENOISE
+    if (icfg.method == InpaintMethod::AiDenoise) {
+        NcnnDenoiser& d = denoiser();  // lazy process-wide singleton
+        if (!d.is_ready()) d.initialize();
+        if (d.is_ready()) {
+            d.denoise(image, detection.region, alpha_map,
+                      icfg.sigma, icfg.strength, icfg.padding);
+            return;  // AI did the cleanup; skip software inpaint
+        }
+        spdlog::warn("AI denoise unavailable - falling back to Gaussian");
+        icfg.method = InpaintMethod::Gaussian;
+    }
+#endif
     inpaint_residual(image, detection.region, icfg, custom_alpha);
 }
 
@@ -344,5 +360,12 @@ cv::Mat WatermarkEngine::create_interpolated_alpha(int width, int height,
     cv::resize(source, interpolated, cv::Size(width, height), 0, 0, method);
     return interpolated;
 }
+
+#ifdef WMR_AI_DENOISE
+NcnnDenoiser& WatermarkEngine::denoiser() {
+    static NcnnDenoiser instance;  // process-wide; model loads on first use
+    return instance;
+}
+#endif
 
 } // namespace wmr

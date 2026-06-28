@@ -7,6 +7,9 @@
 #include "core/types.hpp"
 #include "core/inpaint.hpp"
 #include "embedded_assets.hpp"
+#ifdef WMR_AI_DENOISE
+#include "core/ai_denoise.hpp"
+#endif
 
 namespace wmr {
 
@@ -100,6 +103,9 @@ private:
 
     const cv::Mat& get_v2_alpha(WatermarkSize size) const;
     cv::Mat create_interpolated_alpha(int width, int height, WatermarkSize size) const;
+#ifdef WMR_AI_DENOISE
+    static NcnnDenoiser& denoiser();  // process-wide lazy singleton (model loads once)
+#endif
     void init_alpha_maps();
 };
 
