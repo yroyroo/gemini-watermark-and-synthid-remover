@@ -137,10 +137,18 @@ jobs:
           tar -czf dist/wmr-macos-arm64-ai.tar.gz -C staging wmr-macos-arm64-ai
           cp LICENSE-AI.md dist/            # license travels with the shipped binary
 
-      - name: Verify the bundled artifact runs end-to-end
+      - name: Verify the bundled artifact runs end-to-end (CPU path)
+        # Runs the EXTRACTED bundled artifact through the launcher. The runner's
+        # paravirtualized Metal GPU (AppleParavirtDevice) lacks a selector MoltenVK
+        # probes during vkCreateInstance (newArgumentEncoderWithLayout:), so the GPU
+        # path throws an NSException and aborts here — real Apple Silicon runs it
+        # fine (verified locally). We force no ICD (VK_ICD_FILENAMES -> nonexistent)
+        # so the loader cleanly falls back to CPU: this still proves the bundle
+        # launches (@rpath/@loader_path libvulkan resolution + signing + tarball
+        # round-trip) and runs a denoise. The GPU path is verified out-of-band.
         run: |
           mkdir -p /tmp/verify && tar -xzf dist/wmr-macos-arm64-ai.tar.gz -C /tmp/verify
-          /tmp/verify/wmr-macos-arm64-ai/wmr remove test-images/2400x1792-test1-gemini.png --denoise ai -o /tmp/clean-bundled.png
+          VK_ICD_FILENAMES=/nonexistent /tmp/verify/wmr-macos-arm64-ai/wmr remove test-images/2400x1792-test1-gemini.png --denoise ai -o /tmp/clean-bundled.png
 
       - uses: actions/upload-artifact@v4
         with:

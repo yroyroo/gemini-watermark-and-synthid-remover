@@ -67,24 +67,30 @@ install_name_tool -add_rpath "@loader_path/lib" "$OUT/wmr.bin" 2>/dev/null || tr
 
 install_name_tool -id "@rpath/libvulkan.1.dylib" "$OUT/lib/libvulkan.1.dylib"
 
-# install_name_tool invalidates code signatures; on Apple Silicon an unsigned /
-# stale-signed Mach-O is killed on launch. Re-sign ad-hoc, leaves before the
-# binary that links them.
+# install_name_tool invalidates code signatures; on Apple Silicon a stale-signed
+# Mach-O is killed on launch. Re-sign ad-hoc ONLY what we modified with
+# install_name_tool (wmr.bin + libvulkan). libMoltenVK.dylib is copied verbatim
+# — its original Homebrew signature is valid, and re-signing it ad-hoc can make
+# the Vulkan loader's dlopen() reject it on stricter runners (process SIGKILL).
 codesign --force --sign - "$OUT/lib/libvulkan.1.dylib"
-codesign --force --sign - "$OUT/lib/libMoltenVK.dylib"
 codesign --force --sign - "$OUT/wmr.bin"
+# Sanity: wmr.bin must still launch (catches a broken @rpath/sign here, not later).
+"$OUT/wmr.bin" --version >/dev/null 2>&1 || { echo "error: bundled wmr.bin fails to launch" >&2; exit 1; }
 
 # Launcher: makes the bundled MoltenVK ICD the *only* source the loader consults
 # (VK_ICD_FILENAMES replaces the default search), so the GPU driver ships with
 # the binary. The loader still works if Metal is absent — ncnn falls back to CPU.
+# A pre-set VK_ICD_FILENAMES wins (lets users/tests point elsewhere or force no
+# ICD -> CPU, e.g. on a CI runner whose paravirtualized GPU can't run MoltenVK).
 cat > "$OUT/wmr" <<'EOF'
 #!/usr/bin/env bash
 # Launcher for the macOS AI build. Points the Vulkan loader at the MoltenVK ICD
 # shipped alongside this binary so it runs on a machine with no Vulkan SDK /
-# MoltenVK installed, then execs the real binary.
+# MoltenVK installed, then execs the real binary. A pre-set VK_ICD_FILENAMES is
+# respected (override the ICD, or set to a nonexistent path to force CPU).
 set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export VK_ICD_FILENAMES="$DIR/lib/MoltenVK_icd.json"
+export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-$DIR/lib/MoltenVK_icd.json}"
 export VK_LAYER_PATH=""
 exec "$DIR/wmr.bin" "$@"
 EOF
