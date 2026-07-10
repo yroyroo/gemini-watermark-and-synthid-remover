@@ -105,6 +105,8 @@ wmr remove input_dir/ -o output_dir/ --recursive
 | `--preset` | video | Encode preset (default slow) |
 | `--codec` | video | Video codec (default libx264) |
 | `--legacy` | video | Use Veo legacy text profile |
+| `--notebooklm` | video | Remove the NotebookLM logo + wordmark (auto-detected, NS inpaint) |
+| `--rect` | video | Manual watermark rect `x,y,w,h` (NotebookLM auto-detect fallback) |
 | `--variant` | video | Force geometry: 720p-1, 720p-2, 1080p |
 | `--scenes` | video | Split video into separate files at scene boundaries |
 | `--scene-threshold` | video | Scene cut sensitivity 0.0-1.0 (default 0.3) |
@@ -196,7 +198,18 @@ Video processing uses pure reverse alpha blending — the same lossless method a
 
 Supports both Gemini (diamond) and Veo (text) video watermarks via `--legacy` flag.
 
-**NotebookLM** video watermarks (the rainbow logo + "NotebookLM" wordmark) use a separate path: `wmr video in.mp4 -o out.mp4 --notebooklm`. The mark is semi-transparent and color-adaptive (not a reversible alpha overlay), so removal uses per-frame Navier-Stokes inpainting after template-based auto-detection. Add `--rect x,y,w,h` to specify the watermark region manually if auto-detection misses it.
+**NotebookLM** video watermarks (the rainbow logo + "NotebookLM" wordmark) use a separate path. The mark is semi-transparent and color-adaptive (not a reversible alpha overlay), so removal uses per-frame Navier-Stokes inpainting after template-based auto-detection of the bottom-right mark.
+
+- Works across cinematic, explainer, and short-portrait exports; detection is polarity-invariant (light-on-dark or dark-on-light) and robust across scene cuts.
+- If auto-detection misses the mark, specify the region manually with `--rect x,y,w,h` (measure it in a graphics editor on a full frame — see the `*_FRAME.png` reference frames).
+
+```bash
+# Auto-detect and remove the NotebookLM watermark
+wmr video input.mp4 --notebooklm -o cleaned.mp4
+
+# Manual region (bottom-right mark bbox: x,y,width,height) when auto-detect misses
+wmr video input.mp4 --notebooklm --rect 1145,689,121,17 -o cleaned.mp4
+```
 
 For multi-scene videos, use `--scenes` to split into separate MP4 files at scene boundaries:
 - Detects scene cuts using per-channel BGR Bhattacharyya distance + mean absolute pixel difference
