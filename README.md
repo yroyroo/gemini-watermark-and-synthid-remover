@@ -211,6 +211,15 @@ wmr video input.mp4 --notebooklm -o cleaned.mp4
 wmr video input.mp4 --notebooklm --rect 1145,689,121,17 -o cleaned.mp4
 ```
 
+**Measuring the watermark region for `--rect`:** extract one full-resolution frame and measure the mark's top-left corner and size (in pixels) in any image editor (Preview, Photoshop, GIMP, …):
+
+```bash
+# Grab a full-resolution frame at a given timestamp
+ffmpeg -ss 30 -i input.mp4 -frames:v 1 frame.png
+```
+
+`--rect` is `x,y,width,height`. Leave roughly a 1px border around the mark, and pick a frame where the watermark is clearly visible — it can be faint or absent on some scenes.
+
 For multi-scene videos, use `--scenes` to split into separate MP4 files at scene boundaries:
 - Detects scene cuts using per-channel BGR Bhattacharyya distance + mean absolute pixel difference
 - Splits into production-ready files with I-frame at start, trimmed audio, correct container duration
