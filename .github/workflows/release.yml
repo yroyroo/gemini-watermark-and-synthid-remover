@@ -9,6 +9,20 @@ env:
   BUILD_TYPE: Release
 
 jobs:
+  # Single full-package build per (OS, arch). Every release binary ships the
+  # FDnCNN AI denoise (NCNN+Vulkan) + FSR (opencv_contrib xphoto) — no lean/full
+  # split, no separate AI tarball. Vulkan handling:
+  #   - macOS arm64: native build + Vulkan_LIBRARY hard-link; bundles the Vulkan
+  #     loader + MoltenVK so it runs on a clean macOS with out-of-the-box GPU.
+  #   - macOS x86_64: cross-compiled on the arm64 runner (the only Intel runner,
+  #     macos-13, was retired). No Vulkan_LIBRARY -> NCNN simplevk weak-stub (no
+  #     libvulkan load command) -> self-contained single binary; AI runs on CPU
+  #     (GPU available if the user installs the Vulkan SDK).
+  #   - Linux/Windows: no Vulkan at build time (NCNN simplevk dlopens
+  #     libvulkan.so.1 / vulkan-1.dll at runtime); graceful CPU fallback.
+  # The GPU path can't run on the runners' paravirtualized Metal / headless GPUs,
+  # so every smoke forces CPU (VK_ICD_FILENAMES=/nonexistent) and still proves
+  # the binary launches + denoises + tears down cleanly.
   build:
     strategy:
       fail-fast: false
@@ -16,18 +30,35 @@ jobs:
         include:
           - os: macos-14
             artifact: wmr-macos-arm64
-          - os: macos-15
+            binary: build/wmr
+            macos_arch: arm64
+            vcpkg_triplet: arm64-osx
+          - os: macos-14
             artifact: wmr-macos-x86_64
+            binary: build/wmr
+            macos_arch: x86_64
+            vcpkg_triplet: x64-osx
           - os: ubuntu-latest
             artifact: wmr-linux-x86_64
+            binary: build/wmr
+            vcpkg_triplet: x64-linux
           - os: windows-latest
             artifact: wmr-windows-x86_64.exe
+            binary: build/Release/wmr.exe
             vcpkg_triplet: x64-windows-static
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive          # NCNN submodule (in-tree Vulkan build)
+
+      - name: Install Rosetta (macOS x86_64 cross-build)
+        # Cross-compiling for x64-osx on an arm64 runner builds x86_64 host tools
+        # during the vcpkg/NCNN build that must execute via Rosetta.
+        if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64'
+        run: softwareupdate --install-rosetta --agree-to-license || true
 
       - name: Install Linux system deps
         if: runner.os == 'Linux'
@@ -35,33 +66,83 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config nasm yasm
 
+      - name: Install macOS Vulkan loader + MoltenVK (arm64 bundle only)
+        # arm64 bundles MoltenVK for out-of-the-box GPU. x86_64 uses simplevk
+        # (no bundle) so it needs no Vulkan libs at build time.
+        if: runner.os == 'macOS' && matrix.macos_arch == 'arm64'
+        run: brew install vulkan-loader molten-vk
+
       - uses: lukka/run-vcpkg@v11
         with:
           runVcpkgInstall: true
           vcpkgJsonGlob: '**/vcpkg.json'
 
-      - name: Configure (Unix)
-        if: runner.os != 'Windows'
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          ARGS="-DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DWMR_BUILD_TESTS=OFF -DWMR_BUILD_AI_DENOISE=ON -DVCPKG_MANIFEST_FEATURES=ai-denoise -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          if [ "${{ matrix.macos_arch }}" = "x86_64" ]; then
+            # Cross-compile Intel on Apple Silicon; no Vulkan_LIBRARY -> simplevk
+            # weak-stub -> self-contained binary (CPU AI; GPU via user Vulkan SDK).
+            ARGS="$ARGS -DCMAKE_OSX_ARCHITECTURES=x86_64"
+          else
+            # Apple Silicon native + bundled MoltenVK for out-of-the-box GPU.
+            ARGS="$ARGS -DVulkan_LIBRARY=$(brew --prefix vulkan-loader)/lib/libvulkan.dylib"
+          fi
+          cmake -B build -S . -GNinja $ARGS
+
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
         run: |
           cmake -B build -S . -GNinja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DWMR_BUILD_TESTS=OFF \
+            -DWMR_BUILD_AI_DENOISE=ON \
+            -DVCPKG_MANIFEST_FEATURES="ai-denoise" \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} \
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: |
-          cmake -B build -S . `
+          cmake -B build -S . -GNinja `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
             -DWMR_BUILD_TESTS=OFF `
-            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DWMR_BUILD_AI_DENOISE=ON `
+            -DVCPKG_MANIFEST_FEATURES="ai-denoise" `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} `
             -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }}
 
-      - name: Package (Unix)
-        if: runner.os != 'Windows'
+      - name: AI denoise smoke (CPU path + clean teardown)
+        # Forces no ICD so NCNN falls back to CPU (runners' GPUs can't run
+        # Vulkan/MoltenVK). Still proves the binary launches, denoises, and exits
+        # without the ncnn static-singleton EXC_BAD_ACCESS-at-exit regression.
+        # (x86_64 macOS binary runs on the arm64 host via Rosetta.)
+        shell: bash
+        run: |
+          export VK_ICD_FILENAMES=/nonexistent
+          ${{ matrix.binary }} remove test-images/2400x1792-test1-gemini.png --denoise ai -o smoke_out.png
+          test -f smoke_out.png
+
+      - name: Package (macOS arm64 tarball)
+        if: runner.os == 'macOS' && matrix.macos_arch == 'arm64'
+        run: |
+          mkdir -p dist
+          ./scripts/bundle_macos_vulkan.sh build/wmr staging/wmr-macos-arm64
+          tar -czf dist/${{ matrix.artifact }}.tar.gz -C staging wmr-macos-arm64
+
+      - name: Package (macOS x86_64 binary)
+        if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64'
+        run: |
+          mkdir -p dist
+          cp build/wmr dist/${{ matrix.artifact }}
+          chmod +x dist/${{ matrix.artifact }}
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
         run: |
           mkdir -p dist
           cp build/wmr dist/${{ matrix.artifact }}
@@ -71,92 +152,59 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           mkdir dist
-          cp build/${{ env.BUILD_TYPE }}/wmr.exe dist/${{ matrix.artifact }}
+          cp build/Release/wmr.exe dist/${{ matrix.artifact }}
+
+      - name: Verify packaged macOS arm64 artifact runs (CPU path)
+        if: runner.os == 'macOS' && matrix.macos_arch == 'arm64'
+        run: |
+          mkdir -p /tmp/verify && tar -xzf dist/${{ matrix.artifact }}.tar.gz -C /tmp/verify
+          VK_ICD_FILENAMES=/nonexistent /tmp/verify/wmr-macos-arm64/wmr remove test-images/2400x1792-test1-gemini.png --denoise ai -o /tmp/verify_out.png
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          path: dist/
 
-  # AI-denoise build: a separate macOS arm64 binary with the FDnCNN NCNN/Vulkan
-  # denoiser compiled in. Mirrors upstream's AI build chain (NCNN submodule +
-  # vcpkg ai-denoise feature for volk, NO Vulkan SDK install). The Vulkan
-  # *loader* (libvulkan) + MoltenVK (libMoltenVK) are bundled next to the binary
-  # (scripts/bundle_macos_vulkan.sh) with an @loader_path rpath + a launcher that
-  # sets VK_ICD_FILENAMES, so the artifact runs on a clean macOS install — no
-  # Vulkan SDK, Homebrew, or MoltenVK needed. The 4-job `build` matrix above
-  # stays AI-free (R7): no submodules, no WMR_BUILD_AI_DENOISE, no ai-denoise
-  # vcpkg feature. Runs on tag pushes (ships the AI tarball) + manual dispatch.
-  ai-denoise:
-    runs-on: macos-14
+  # Unit + integration tests WITH the AI denoise compiled in (the release
+  # binaries now always ship AI, so this restores AI + routing test coverage that
+  # the dev-default-OFF / release-TESTS-OFF gap previously dropped).
+  tests:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive          # fetches the NCNN submodule
+          submodules: recursive
+
+      - name: Install Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config nasm yasm
 
       - uses: lukka/run-vcpkg@v11
         with:
           runVcpkgInstall: true
           vcpkgJsonGlob: '**/vcpkg.json'
 
-      - name: Install Vulkan loader + MoltenVK
-        # NCNN_VULKAN=ON LINKS libvulkan (the loader) at build time. That dylib
-        # comes from the vulkan-loader formula — NOT molten-vk, which ships only
-        # libMoltenVK (the Metal ICD the loader dlopens at runtime). Both are
-        # bundled into the artifact post-build so it runs on a clean machine.
-        run: brew install vulkan-loader molten-vk
-
-      - name: Configure (AI)
+      - name: Configure (tests + AI)
         run: |
-          VKLIB="$(brew --prefix vulkan-loader)/lib/libvulkan.dylib"
           cmake -B build -S . -GNinja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DWMR_BUILD_TESTS=OFF \
             -DWMR_BUILD_AI_DENOISE=ON \
+            -DWMR_BUILD_TESTS=ON \
             -DVCPKG_MANIFEST_FEATURES="ai-denoise" \
-            -DVulkan_LIBRARY="$VKLIB" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }}
 
-      - name: Smoke test (--version)
-        run: ./build/wmr --version
-
-      - name: Denoise smoke (GPU path + clean teardown)
-        # Exercises Vulkan GPU init and process-exit teardown. Guards against the
-        # ncnn static-singleton destructor crash (EXC_BAD_ACCESS in
-        # VulkanDevice::vkdevice() at exit) that previously segfaulted the GPU path.
-        run: ./build/wmr remove test-images/2400x1792-test1-gemini.png --denoise ai -o /tmp/clean.png
-
-      - name: Bundle Vulkan loader + MoltenVK into a standalone tarball
-        run: |
-          mkdir -p staging dist
-          ./scripts/bundle_macos_vulkan.sh build/wmr staging/wmr-macos-arm64-ai
-          tar -czf dist/wmr-macos-arm64-ai.tar.gz -C staging wmr-macos-arm64-ai
-          cp LICENSE-AI.md dist/            # license travels with the shipped binary
-
-      - name: Verify the bundled artifact runs end-to-end (CPU path)
-        # Runs the EXTRACTED bundled artifact through the launcher. The runner's
-        # paravirtualized Metal GPU (AppleParavirtDevice) lacks a selector MoltenVK
-        # probes during vkCreateInstance (newArgumentEncoderWithLayout:), so the GPU
-        # path throws an NSException and aborts here — real Apple Silicon runs it
-        # fine (verified locally). We force no ICD (VK_ICD_FILENAMES -> nonexistent)
-        # so the loader cleanly falls back to CPU: this still proves the bundle
-        # launches (@rpath/@loader_path libvulkan resolution + signing + tarball
-        # round-trip) and runs a denoise. The GPU path is verified out-of-band.
-        run: |
-          mkdir -p /tmp/verify && tar -xzf dist/wmr-macos-arm64-ai.tar.gz -C /tmp/verify
-          VK_ICD_FILENAMES=/nonexistent /tmp/verify/wmr-macos-arm64-ai/wmr remove test-images/2400x1792-test1-gemini.png --denoise ai -o /tmp/clean-bundled.png
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wmr-macos-arm64-ai
-          path: dist/
+      - name: Test
+        working-directory: ${{ github.workspace }}
+        run: ctest --test-dir build --output-on-failure
 
   release:
-    needs: [build, ai-denoise]   # AI tarball ships with every release
+    needs: [build, tests]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -177,9 +225,8 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/wmr-macos-arm64/wmr-macos-arm64
+            artifacts/wmr-macos-arm64/wmr-macos-arm64.tar.gz
             artifacts/wmr-macos-x86_64/wmr-macos-x86_64
             artifacts/wmr-linux-x86_64/wmr-linux-x86_64
             artifacts/wmr-windows-x86_64.exe/wmr-windows-x86_64.exe
-            artifacts/wmr-macos-arm64-ai/wmr-macos-arm64-ai.tar.gz
-            artifacts/wmr-macos-arm64-ai/LICENSE-AI.md
+            LICENSE-THIRD-PARTY.md

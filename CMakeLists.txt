@@ -44,6 +44,17 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 
 # Find dependencies via vcpkg
 find_package(OpenCV REQUIRED)
+
+# opencv_contrib xphoto (FSR inpaint for NotebookLM intricate backgrounds). The
+# opencv_xphoto imported target exists only when the OpenCV build includes
+# contrib xphoto (Homebrew opencv yes; vcpkg yes once the opencv4 `contrib`
+# feature is enabled). Guarded so a build without xphoto compiles cleanly and
+# falls back to NS at runtime.
+if(TARGET opencv_xphoto)
+    target_link_libraries(${PROJECT_NAME} PRIVATE opencv_xphoto)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE WMR_HAS_XPHOTO=1)
+endif()
+
 find_package(fmt REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(spdlog REQUIRED)
