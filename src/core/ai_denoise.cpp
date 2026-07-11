@@ -116,6 +116,7 @@ struct NcnnDenoiser::Impl {
     }
 
     bool init_gpu() {
+#if NCNN_VULKAN
         int gpu_count = ncnn::get_gpu_count();
         if (gpu_count <= 0) {
             spdlog::info("NcnnDenoiser: No Vulkan GPU detected, using CPU");
@@ -130,6 +131,11 @@ struct NcnnDenoiser::Impl {
 
         spdlog::info("NcnnDenoiser: Vulkan GPU #{} - {}", gpu_device_index, device_desc);
         return true;
+#else
+        // NCNN built without Vulkan (WMR_NCNN_VULKAN=OFF, e.g. the macOS x86_64
+        // cross-build) — GPU path unavailable, fall back to CPU.
+        return false;
+#endif
     }
 
     void init_cpu() {
@@ -336,6 +342,7 @@ bool NcnnDenoiser::initialize() {
     // create_gpu_instance() dispatches through uninitialised function
     // pointers and crashes -- see issues #30 and #31.
     const bool vulkan_available = vulkan_loader_present();
+#if NCNN_VULKAN
     if (vulkan_available) {
         ncnn::create_gpu_instance();
     } else {
@@ -347,6 +354,17 @@ bool NcnnDenoiser::initialize() {
         spdlog::info("NcnnDenoiser: Vulkan loader unavailable, falling back to CPU");
 #endif
     }
+#else
+    // NCNN built without Vulkan (WMR_NCNN_VULKAN=OFF, e.g. the macOS x86_64
+    // cross-build). The loader probe still runs (harmless) but is moot: even
+    // if a Vulkan loader is present, the GPU compute path is not compiled in.
+    if (vulkan_available) {
+        spdlog::info("NcnnDenoiser: Vulkan loader present but this build has no "
+                     "GPU support (WMR_NCNN_VULKAN=OFF); using CPU");
+    } else {
+        spdlog::info("NcnnDenoiser: Built without Vulkan support (WMR_NCNN_VULKAN=OFF); using CPU");
+    }
+#endif
 
     // FP16 storage for efficiency, FP32 compute for accuracy
     m_impl->net.opt.use_fp16_packed = true;

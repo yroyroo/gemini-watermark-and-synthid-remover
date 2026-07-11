@@ -167,9 +167,15 @@ if(WMR_BUILD_AI_DENOISE)
     # Diagnostic-only: surfaces where CMake's FindVulkan resolved the loader.
     find_package(Vulkan QUIET)
 
-    # Configure the in-tree NCNN as a static lib with Vulkan on. Cache knobs
-    # are set BEFORE add_subdirectory so NCNN picks them up.
-    set(NCNN_VULKAN ON CACHE BOOL "" FORCE)
+    # Configure the in-tree NCNN as a static lib. Vulkan GPU support is ON by
+    # default; the macOS x86_64 cross-build sets WMR_NCNN_VULKAN=OFF (CPU-only
+    # AI) because on APPLE NCNN's simplevk does STATIC Vulkan linkage and needs
+    # a build-time libvulkan — but there is no x86_64 Vulkan dylib on the arm64
+    # runner to link against. (Linux/Windows use simplevk's runtime dlopen
+    # fallback, so they keep Vulkan with no build-time loader.) Cache knobs are
+    # set BEFORE add_subdirectory so NCNN picks them up.
+    option(WMR_NCNN_VULKAN "Build NCNN with Vulkan GPU support (OFF = CPU-only AI denoise)" ON)
+    set(NCNN_VULKAN ${WMR_NCNN_VULKAN} CACHE BOOL "" FORCE)
     set(NCNN_SHARED_LIB OFF CACHE BOOL "" FORCE)
     set(NCNN_OPENMP OFF CACHE BOOL "" FORCE)
     set(NCNN_BUILD_TESTS OFF CACHE BOOL "" FORCE)

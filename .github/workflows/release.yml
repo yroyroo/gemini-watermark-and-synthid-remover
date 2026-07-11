@@ -15,9 +15,11 @@ jobs:
   #   - macOS arm64: native build + Vulkan_LIBRARY hard-link; bundles the Vulkan
   #     loader + MoltenVK so it runs on a clean macOS with out-of-the-box GPU.
   #   - macOS x86_64: cross-compiled on the arm64 runner (the only Intel runner,
-  #     macos-13, was retired). No Vulkan_LIBRARY -> NCNN simplevk weak-stub (no
-  #     libvulkan load command) -> self-contained single binary; AI runs on CPU
-  #     (GPU available if the user installs the Vulkan SDK).
+  #     macos-13, was retired). WMR_NCNN_VULKAN=OFF -> CPU-only AI: on APPLE
+  #     NCNN's simplevk does STATIC Vulkan linkage and needs a build-time
+  #     libvulkan, but there is no x86_64 Vulkan dylib on this arm64 runner to
+  #     link against. arm64 keeps the out-of-the-box GPU build; the Intel binary
+  #     is otherwise full (FSR + AI on CPU + video + synthid).
   #   - Linux/Windows: no Vulkan at build time (NCNN simplevk dlopens
   #     libvulkan.so.1 / vulkan-1.dll at runtime); graceful CPU fallback.
   # The GPU path can't run on the runners' paravirtualized Metal / headless GPUs,
@@ -92,9 +94,11 @@ jobs:
         run: |
           ARGS="-DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DWMR_BUILD_TESTS=OFF -DWMR_BUILD_AI_DENOISE=ON -DVCPKG_MANIFEST_FEATURES=ai-denoise -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
           if [ "${{ matrix.macos_arch }}" = "x86_64" ]; then
-            # Cross-compile Intel on Apple Silicon; no Vulkan_LIBRARY -> simplevk
-            # weak-stub -> self-contained binary (CPU AI; GPU via user Vulkan SDK).
-            ARGS="$ARGS -DCMAKE_OSX_ARCHITECTURES=x86_64"
+            # Cross-compile Intel on Apple Silicon. NCNN's simplevk does STATIC
+            # Vulkan linkage on APPLE and needs a build-time libvulkan; there is
+            # no x86_64 Vulkan dylib on this arm64 runner, so disable Vulkan
+            # entirely -> CPU-only AI on this binary (arm64 keeps the GPU build).
+            ARGS="$ARGS -DCMAKE_OSX_ARCHITECTURES=x86_64 -DWMR_NCNN_VULKAN=OFF"
           else
             # Apple Silicon native + bundled MoltenVK for out-of-the-box GPU.
             ARGS="$ARGS -DVulkan_LIBRARY=$(brew --prefix vulkan-loader)/lib/libvulkan.dylib"
