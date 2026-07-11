@@ -60,6 +60,16 @@ jobs:
         if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64'
         run: softwareupdate --install-rosetta --agree-to-license || true
 
+      - name: Install macOS build deps (nasm)
+        # x264 (an ffmpeg[x264] dep) builds from source on a cold triplet and
+        # needs nasm. The x64-osx triplet is new -> its cache is cold the first
+        # run, so x264 must build -> needs nasm. (arm64-osx is usually warm, but
+        # install defensively in case the cache evicts.) nasm's output arch is
+        # set by flags (-f macho64), not the nasm binary's own arch, so the
+        # Homebrew arm64 nasm assembles x86_64 code for the cross-build fine.
+        if: runner.os == 'macOS'
+        run: brew install nasm
+
       - name: Install Linux system deps
         if: runner.os == 'Linux'
         run: |
