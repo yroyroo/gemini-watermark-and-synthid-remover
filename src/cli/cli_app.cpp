@@ -512,7 +512,8 @@ int run_cli(int argc, char* argv[]) {
     video_cmd->add_option("--rect", opts.notebooklm_rect_str,
                            "Manual watermark rect x,y,w,h (for --notebooklm auto-detect fallback)");
     video_cmd->add_option("--notebooklm-method", opts.notebooklm_method,
-                           "Inpaint method: ns (default) | shiftmap | lama");
+                           "Inpaint method: auto (default) | ns | fsr")
+        ->check(CLI::IsMember({"auto", "ns", "fsr"}));
     video_cmd->add_option("--complexity-threshold", opts.notebooklm_complexity_threshold,
                            "Background-complexity floor to treat as intricate (default 15.0)");
     video_cmd->add_option("--variant", opts.video_variant_str,

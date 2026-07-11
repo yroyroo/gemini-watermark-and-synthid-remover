@@ -1,6 +1,7 @@
 #include "video/notebooklm_gates.hpp"
 
 #include <opencv2/imgproc.hpp>
+#include <string>
 
 namespace wmr {
 
@@ -50,6 +51,21 @@ float background_complexity_score(const cv::Mat& gray_frame, const cv::Rect& mar
 bool background_is_intricate(const cv::Mat& gray_frame, const cv::Rect& mark_rect,
                              float threshold) {
     return background_complexity_score(gray_frame, mark_rect) >= threshold;
+}
+
+std::string resolve_inpaint_method(float complexity, double threshold,
+                                   const std::string& requested, bool has_xphoto) {
+    const bool intricate = complexity >= static_cast<float>(threshold);
+    if (requested == "fsr") {
+        // Explicit FSR: honour it only when xphoto is compiled in; else NS.
+        return has_xphoto ? "fsr" : "ns";
+    }
+    if (requested == "ns") {
+        return "ns";
+    }
+    // "auto" (and any unrecognized value): route intricate backgrounds to FSR
+    // when available, otherwise NS — the bit-identical v1.6.0 default.
+    return (has_xphoto && intricate) ? "fsr" : "ns";
 }
 
 } // namespace wmr

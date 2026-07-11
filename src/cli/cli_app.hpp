@@ -37,7 +37,7 @@ struct CliOptions {
     bool legacy_profile = false;       // video: Veo legacy text profile
     bool notebooklm_profile = false;    // video: NotebookLM profile
     std::string notebooklm_rect_str;     // video: manual rect override "x,y,w,h"
-    std::string notebooklm_method = "ns";          // video: --notebooklm-method {ns|shiftmap|lama}
+    std::string notebooklm_method = "auto";        // video: --notebooklm-method {auto|ns|fsr}
     double notebooklm_complexity_threshold = 15.0; // video: --complexity-threshold
     bool still_legacy = false;         // still images: pin legacy V1 (Gemini pre-3.5)
     bool still_no_legacy = false;      // still images: pin current V2, disable V2→V1 fallback

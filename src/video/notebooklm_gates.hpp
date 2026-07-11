@@ -1,6 +1,7 @@
 #pragma once
 
 #include <opencv2/core.hpp>
+#include <string>
 
 namespace wmr {
 
@@ -18,5 +19,17 @@ float background_complexity_score(const cv::Mat& gray_frame, const cv::Rect& mar
 // warrant a stronger inpainter than plain NS.
 bool background_is_intricate(const cv::Mat& gray_frame, const cv::Rect& mark_rect,
                              float threshold);
+
+// Resolve the per-scene inpaint method from the requested option + the scene's
+// background complexity. Pure (no VideoReader) so it can be unit-tested without
+// linking FFmpeg.
+//   requested:  "auto" (complexity-gated) | "ns" | "fsr"
+//   has_xphoto: whether the build compiled opencv_contrib xphoto
+//               (WMR_HAS_XPHOTO); passed as a bool so the function is testable
+//               in either build configuration.
+// Returns "fsr" only when intricate AND requested allows AND xphoto present;
+// otherwise "ns" (the always-available fallback).
+std::string resolve_inpaint_method(float complexity, double threshold,
+                                   const std::string& requested, bool has_xphoto);
 
 } // namespace wmr

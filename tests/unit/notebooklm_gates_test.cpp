@@ -50,3 +50,36 @@ TEST_CASE("NotebookLM complexity: accepts BGR input", "[notebooklm]") {
     float s = background_complexity_score(uniform_bgr, corner_mark());
     REQUIRE(s < 1.0f);
 }
+
+TEST_CASE("NotebookLM method routing: resolve_inpaint_method", "[notebooklm]") {
+    const double thr = 15.0;
+    const float uniform = 5.0f;     // below threshold (cinematic-like)
+    const float intricate = 41.0f;  // above threshold (Neon-like explainer)
+
+    SECTION("auto + uniform -> ns") {
+        REQUIRE(resolve_inpaint_method(uniform, thr, "auto", true) == "ns");
+        REQUIRE(resolve_inpaint_method(uniform, thr, "auto", false) == "ns");
+    }
+    SECTION("auto + intricate + xphoto -> fsr") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, "auto", true) == "fsr");
+    }
+    SECTION("auto + intricate + NO xphoto -> ns (no regression vs v1.6.0 NS default)") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, "auto", false) == "ns");
+    }
+    SECTION("explicit ns -> ns regardless of complexity/xphoto") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, "ns", true) == "ns");
+        REQUIRE(resolve_inpaint_method(uniform, thr, "ns", false) == "ns");
+    }
+    SECTION("explicit fsr honoured only when xphoto is compiled in") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, "fsr", true) == "fsr");
+        REQUIRE(resolve_inpaint_method(uniform, thr, "fsr", true) == "fsr");
+        REQUIRE(resolve_inpaint_method(intricate, thr, "fsr", false) == "ns");
+    }
+    SECTION("complexity == threshold counts as intricate (>=)") {
+        REQUIRE(resolve_inpaint_method(static_cast<float>(thr), thr, "auto", true) == "fsr");
+    }
+    SECTION("unrecognized requested value behaves like auto (safe)") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, "bogus", true) == "fsr");
+        REQUIRE(resolve_inpaint_method(uniform, thr, "bogus", true) == "ns");
+    }
+}

@@ -21,7 +21,7 @@ struct VideoWatermarkConfig {
     std::optional<cv::Rect> notebooklm_rect;  // --rect x,y,w,h override
     double scene_threshold = 0.4;
     // NotebookLM adaptive dispatch (Phase A):
-    std::string notebooklm_method = "ns";          // --notebooklm-method {ns|shiftmap|lama}
+    std::string notebooklm_method = "auto";        // --notebooklm-method {auto|ns|fsr}
     double notebooklm_complexity_threshold = 15.0; // --complexity-threshold (intricate if score >= this)
     double notebooklm_presence_threshold = 0.45;   // mark-present confidence floor per scene
 };

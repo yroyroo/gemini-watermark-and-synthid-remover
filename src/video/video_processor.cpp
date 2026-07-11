@@ -1,6 +1,7 @@
 #include "video/video_processor.hpp"
 #include "video/video_reader.hpp"
 #include "video/scene_detector.hpp"
+#include "video/notebooklm_gates.hpp"
 #include "core/watermark_engine.hpp"
 
 #include <algorithm>
@@ -12,6 +13,13 @@
 #include <spdlog/spdlog.h>
 #include <opencv2/photo.hpp>
 #include <fmt/format.h>
+
+#if defined(WMR_HAS_XPHOTO)
+// opencv_contrib xphoto FSR inpaint for NotebookLM intricate backgrounds. Guarded
+// so a build without xphoto (no opencv_contrib) compiles cleanly and falls back
+// to Navier-Stokes at runtime.
+#include <opencv2/xphoto/inpainting.hpp>
+#endif
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -655,9 +663,21 @@ static void inpaint_mark_roi(cv::Mat& frame, const cv::Rect& mark_rect,
     cv::dilate(lmask, lmask, cv::Mat::ones(5, 5, CV_8U), cv::Point(-1, -1), 1);
 
     cv::Mat out;
-    // Phase A: NS only. (shiftmap→Phase B / lama→Phase C branch here later.)
-    (void)method;
-    cv::inpaint(crop, lmask, out, radius, cv::INPAINT_NS);
+    if (method == "fsr") {
+#if defined(WMR_HAS_XPHOTO)
+        // xphoto's mask convention is INVERTED vs cv::inpaint: non-zero = valid,
+        // zero = the hole to fill. Same dilated hole extent as the NS path.
+        cv::Mat xmask;
+        cv::bitwise_not(lmask, xmask);
+        cv::xphoto::inpaint(crop, xmask, out, cv::xphoto::INPAINT_FSR_BEST);
+#else
+        // FSR requested but xphoto not compiled in: fall back to NS.
+        cv::inpaint(crop, lmask, out, radius, cv::INPAINT_NS);
+#endif
+    } else {
+        // "ns" (and any other value) — the always-available Navier-Stokes path.
+        cv::inpaint(crop, lmask, out, radius, cv::INPAINT_NS);
+    }
     out.copyTo(frame(roi));
 }
 
@@ -733,8 +753,39 @@ VideoResult VideoProcessor::process_notebooklm(const std::string& input_path,
                          "complexity={:.1f} -> {}",
                          i + 1, scenes.size(), scenes[i].start_frame, scenes[i].end_frame,
                          present, conf, complexity,
-                         present ? "inpaint(NS)" : "skip");
+                         present ? "inpaint" : "skip");
         }
+    }
+
+    // 4b. Resolve the per-scene inpaint method from the complexity gate. "auto"
+    //     routes intricate backgrounds to FSR (when xphoto is compiled in) and
+    //     uniform backgrounds to NS; "ns"/"fsr" force a method. With xphoto
+    //     absent, "auto" collapses to NS for every scene — bit-identical to the
+    //     v1.6.0 default (no regression).
+    const bool has_xphoto =
+#if defined(WMR_HAS_XPHOTO)
+        true;
+#else
+        false;
+#endif
+    std::vector<std::string> scene_method(scenes.size());
+    bool warned_no_xphoto = false;
+    for (size_t i = 0; i < scenes.size(); ++i) {
+        if (!verdicts[i].present) {
+            scene_method[i] = "ns";  // unused: absent-mark scenes are written through
+            continue;
+        }
+        scene_method[i] = resolve_inpaint_method(
+            verdicts[i].complexity, config.notebooklm_complexity_threshold,
+            config.notebooklm_method, has_xphoto);
+        if (!has_xphoto && config.notebooklm_method != "ns" && scene_method[i] == "ns"
+            && !warned_no_xphoto) {
+            spdlog::warn("NotebookLM: FSR requested but xphoto not compiled in "
+                         "(WMR_HAS_XPHOTO undefined); falling back to NS");
+            warned_no_xphoto = true;
+        }
+        spdlog::info("NotebookLM scene {}/{}: complexity={:.1f} -> inpaint({})",
+                     i + 1, scenes.size(), verdicts[i].complexity, scene_method[i]);
     }
 
     // 5. Open output writer.
@@ -789,7 +840,7 @@ VideoResult VideoProcessor::process_notebooklm(const std::string& input_path,
         }
 
         if (present) {
-            inpaint_mark_roi(frame, mask_rect, inpaint_radius, config.notebooklm_method);
+            inpaint_mark_roi(frame, mask_rect, inpaint_radius, scene_method[cur_scene]);
             ++frames_inpainted;
         } else {
             ++frames_passthrough;  // absent-mark scene: write through unmodified
