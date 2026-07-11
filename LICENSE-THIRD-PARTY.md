@@ -1,12 +1,14 @@
-# Third-Party Licenses — AI Denoise (`wmr-macos-arm64-ai`)
+# Third-Party Licenses — `wmr` release binaries
 
-This file accompanies the AI-enabled `wmr` binary (`wmr-macos-arm64-ai`), which
-is built with `WMR_BUILD_AI_DENOISE=ON` and statically links the NCNN inference
-framework and the volk Vulkan loader, and embeds an FDnCNN model. The licenses of
-those components are reproduced below so they travel with the binary.
+As of v1.7.0 every `wmr` release binary is a single self-contained package that
+ships the FDnCNN AI denoise (NCNN + volk, an embedded model) and FSR inpaint
+(opencv_contrib `xphoto`). These components are statically linked into the
+binary; their licenses are reproduced below so they travel with every download.
 
-The standard lean `wmr` release binaries are AI-free and do NOT link or embed any
-of these components; this file does not apply to them.
+The macOS arm64 build additionally bundles the Vulkan loader (`libvulkan`) and
+MoltenVK (`libMoltenVK`) next to the binary (see `scripts/bundle_macos_vulkan.sh`);
+both are Apache-2.0 / BSD-3 respectively (covered by the OpenCV / MoltenVK
+notices below where applicable). MoltenVK ships its own license inside its dylib.
 
 ---
 
@@ -95,6 +97,27 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## OpenCV / opencv_contrib / xphoto — Apache License 2.0
+
+Source: <https://github.com/opencv/opencv> · <https://github.com/opencv/opencv_contrib>
+
+The `wmr` binary links OpenCV core modules and the opencv_contrib `xphoto`
+module (FSR inpaint for NotebookLM intricate backgrounds). OpenCV and
+opencv_contrib are licensed under the Apache License, Version 2.0. A complete
+copy of the license is at <https://www.apache.org/licenses/LICENSE-2.0>.
+
+Copyright © 2000-2025 OpenCV team.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. You may obtain a copy of the
+License at <https://www.apache.org/licenses/LICENSE-2.0>. Unless required by
+applicable law or agreed to in writing, software distributed under the License is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+either express or implied. See the License for the specific language governing
+permissions and limitations under the License.
 
 ---
 
