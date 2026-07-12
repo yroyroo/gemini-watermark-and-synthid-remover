@@ -14,18 +14,11 @@
 #include <opencv2/photo.hpp>
 #include <fmt/format.h>
 
-#if defined(WMR_HAS_XPHOTO)
-// opencv_contrib xphoto FSR inpaint for NotebookLM intricate backgrounds. Guarded
-// so a build without xphoto (no opencv_contrib) compiles cleanly and falls back
-// to Navier-Stokes at runtime.
-#include <opencv2/xphoto/inpainting.hpp>
-#endif
-
-#if defined(WMR_AI_LAMA)
-// LaMa ONNX inpainter (Phase C) for the hardest NotebookLM backgrounds that
-// FSR/NS blur/smear. Guarded so a build without LaMa (WMR_BUILD_AI_LAMA=OFF)
-// compiles cleanly and falls back to FSR/NS at runtime.
-#include "core/lama_inpainter.hpp"
+#if defined(WMR_AI_MIGAN)
+// MI-GAN ONNX inpainter for NotebookLM intricate backgrounds (replaces FSR and
+// LaMa — sharper on cartoons, ~225 ms CPU, MIT, 27 MB). Guarded so a build
+// without MI-GAN (WMR_BUILD_AI_MIGAN=OFF) compiles cleanly and falls back to NS.
+#include "core/migan_inpainter.hpp"
 #endif
 
 extern "C" {
@@ -646,48 +639,38 @@ VideoResult VideoProcessor::process(const std::string& input_path,
 
 
 // ---------------------------------------------------------------------------
-// Inpaint the watermark ROI on a single frame. Padded-crop inpaint (faster and
-// a smaller visible area than full-frame cv::inpaint). Method:
-//   "lama" -> LaMa ONNX (512x512 bottom-right crop) when WMR_AI_LAMA, else NS.
-//   "fsr"  -> cv::xphoto INPAINT_FSR_FAST (generous context crop) when
-//             WMR_HAS_XPHOTO, else NS.
-//   "ns" / anything else -> cv::inpaint Navier-Stokes (lean crop).
-// ---------------------------------------------------------------------------
-// Context padding (px around the mark) given to FSR so it can continue the
-// surrounding texture and blend smoothly. NS uses a lean radius+4 crop — it only
-// uses the mask edge, so extra context does not help it. LaMa ignores the small
-// crop entirely (it builds its own 512x512 window).
-static constexpr int kFsrContextPad = 30;
-
+// Inpaint the watermark ROI on a single frame.
+//   "migan" -> MI-GAN ONNX (full-frame, uint8 dynamic-res) when WMR_AI_MIGAN,
+//              else fall through to NS.
+//   "ns" / anything else -> cv::inpaint Navier-Stokes on a lean padded crop.
+// MI-GAN takes the whole frame (mobile-optimized, ~225 ms at 720p) and composites
+// the fill itself; NS is a local PDE method that only needs a small radius+4 crop.
 static void inpaint_mark_roi(cv::Mat& frame, const cv::Rect& mark_rect,
                              int radius, const std::string& method) {
     const cv::Rect bounds(0, 0, frame.cols, frame.rows);
     cv::Rect mask = mark_rect & bounds;
     if (mask.empty()) return;
 
-    if (method == "lama") {
-#if defined(WMR_AI_LAMA)
+    if (method == "migan") {
+#if defined(WMR_AI_MIGAN)
         // Leaked process singleton: the Ort::Session races ONNX Runtime global
         // state during static teardown (same rationale as the NCNN denoiser).
-        static LamaInpainter* lama = []() {
-            auto* p = new LamaInpainter();   // intentionally never deleted
+        static MiganInpainter* migan = []() {
+            auto* p = new MiganInpainter();   // intentionally never deleted
             p->initialize();
             return p;
         }();
-        if (lama->is_ready()) {
-            lama->inpaint_hole(frame, mask);
+        if (migan->is_ready()) {
+            migan->inpaint_hole(frame, mask);
             return;
         }
         // Model missing / init failed -> fall through to the NS path below.
-#else
-        // LaMa requested but not compiled in -> fall through to NS below.
 #endif
+        // MI-GAN not compiled in -> fall through to NS below.
     }
 
-    // FSR reconstructs the hole by continuing the surrounding texture, so it
-    // needs a generous context crop to blend smoothly; NS is a local PDE method
-    // and stays lean. (Too-small a crop starves FSR of context -> muddy fill.)
-    const int pad = (method == "fsr") ? kFsrContextPad : (radius + 4);
+    // NS: a local PDE method — a lean radius+4 padded crop is all it needs.
+    const int pad = radius + 4;
     cv::Rect roi = (mask + cv::Size(2 * pad, 2 * pad)) - cv::Point(pad, pad);
     roi &= bounds;
     if (roi.width <= 0 || roi.height <= 0) return;
@@ -701,24 +684,7 @@ static void inpaint_mark_roi(cv::Mat& frame, const cv::Rect& mark_rect,
     cv::dilate(lmask, lmask, cv::Mat::ones(5, 5, CV_8U), cv::Point(-1, -1), 1);
 
     cv::Mat out;
-    if (method == "fsr") {
-#if defined(WMR_HAS_XPHOTO)
-        // xphoto's mask convention is INVERTED vs cv::inpaint: non-zero = valid,
-        // zero = the hole to fill. Same dilated hole extent as the NS path.
-        // FSR_FAST, not FSR_BEST: on this ~130x16 crop FSR_BEST is ~1.3 s/frame
-        // (endless DCT iterations) — infeasible for video — while FSR_FAST is
-        // ~64 ms/frame with near-identical quality on a hole this small.
-        cv::Mat xmask;
-        cv::bitwise_not(lmask, xmask);
-        cv::xphoto::inpaint(crop, xmask, out, cv::xphoto::INPAINT_FSR_FAST);
-#else
-        // FSR requested but xphoto not compiled in: fall back to NS.
-        cv::inpaint(crop, lmask, out, radius, cv::INPAINT_NS);
-#endif
-    } else {
-        // "ns" (and any other value) — the always-available Navier-Stokes path.
-        cv::inpaint(crop, lmask, out, radius, cv::INPAINT_NS);
-    }
+    cv::inpaint(crop, lmask, out, radius, cv::INPAINT_NS);  // the always-available fallback
     out.copyTo(frame(roi));
 }
 
@@ -793,44 +759,28 @@ VideoResult VideoProcessor::process_notebooklm(const std::string& input_path,
         }
     }
 
-    // 4b. Resolve the per-scene inpaint method from the complexity gate. "auto"
-    //     routes intricate backgrounds to FSR (when xphoto is compiled in) and
-    //     uniform backgrounds to NS; "ns"/"fsr"/"lama" force/gate a method.
-    //     "lama" runs LaMa only on the hardest scenes (complexity >=
-    //     lama_threshold) when WMR_AI_LAMA, else FSR/NS. With xphoto absent,
-    //     "auto" collapses to NS for every scene — bit-identical to the v1.6.0
-    //     default (no regression); LaMa never runs under "auto".
-    const bool has_xphoto =
-#if defined(WMR_HAS_XPHOTO)
-        true;
-#else
-        false;
-#endif
-    const bool has_lama =
-#if defined(WMR_AI_LAMA)
+    // 4b. Resolve the per-scene inpaint method from the complexity gate. There is
+    //     no user method choice — the pipeline always uses NS (uniform) + MI-GAN
+    //     (intricate). Intricate scenes (complexity >= notebooklm_complexity_threshold)
+    //     use MI-GAN when WMR_AI_MIGAN, else NS.
+    const bool has_migan =
+#if defined(WMR_AI_MIGAN)
         true;
 #else
         false;
 #endif
     std::vector<std::string> scene_method(scenes.size());
-    bool warned_no_xphoto = false;
-    bool warned_no_lama = false;
+    bool warned_no_migan = false;
     for (size_t i = 0; i < scenes.size(); ++i) {
         scene_method[i] = resolve_inpaint_method(
-            scene_complexity[i], config.notebooklm_complexity_threshold,
-            config.notebooklm_lama_threshold, config.notebooklm_method,
-            has_xphoto, has_lama);
-        if (!has_xphoto && config.notebooklm_method != "ns" && scene_method[i] == "ns"
-            && !warned_no_xphoto) {
-            spdlog::warn("NotebookLM: FSR requested but xphoto not compiled in "
-                         "(WMR_HAS_XPHOTO undefined); falling back to NS");
-            warned_no_xphoto = true;
-        }
-        if (!has_lama && config.notebooklm_method == "lama" && scene_method[i] != "lama"
-            && !warned_no_lama) {
-            spdlog::warn("NotebookLM: LaMa requested but not compiled in "
-                         "(WMR_AI_LAMA undefined); falling back to FSR/NS");
-            warned_no_lama = true;
+            scene_complexity[i], config.notebooklm_complexity_threshold, has_migan);
+        if (has_migan && scene_method[i] == "ns" &&
+            scene_complexity[i] >= static_cast<float>(config.notebooklm_complexity_threshold) &&
+            !warned_no_migan) {
+            // MI-GAN is built but an intricate scene still resolved to NS ->
+            // the model failed to load. Warn once (every other scene is fine).
+            spdlog::warn("NotebookLM: MI-GAN model unavailable; using NS");
+            warned_no_migan = true;
         }
         spdlog::info("NotebookLM scene {}/{}: complexity={:.1f} -> inpaint({})",
                      i + 1, scenes.size(), scene_complexity[i], scene_method[i]);

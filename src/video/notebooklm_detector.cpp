@@ -53,9 +53,13 @@ struct NotebookLMMode {
 
 static const std::vector<NotebookLMMode> kKnownModes = {
     {1280, 720, cv::Rect(1145, 689, 121, 17), "cinematic"},  // margins 15/15
-    {1280, 720, cv::Rect(1105, 660, 131, 16), "explainer"},  // margins 45/45
+    {1280, 720, cv::Rect(1085, 658, 153, 20), "explainer"},  // margins ~42/42 — covers the spiral logo + wordmark
     { 406, 720, cv::Rect( 296, 694,  98, 14), "short"},      // margins 13/13
 };
+// NOTE: the explainer rect was (1105,660,131,16), which started at the spiral
+// logo's RIGHT edge and left ~18px of the logo unmasked. The blur of NS/FSR/LaMa
+// hid it; MI-GAN's precise fill exposed it. Widened left to (1085,...) so the
+// whole logo+wordmark is masked.
 
 static cv::Mat load_mark_template() {
     std::vector<uchar> buf(embedded::notebooklm_mark_png,

@@ -52,60 +52,24 @@ TEST_CASE("NotebookLM complexity: accepts BGR input", "[notebooklm]") {
 }
 
 TEST_CASE("NotebookLM method routing: resolve_inpaint_method", "[notebooklm]") {
-    const double thr = 15.0;       // fsr/complexity threshold (--complexity-threshold)
-    const double lama_thr = 60.0;  // LaMa threshold (--lama-threshold)
-    const float uniform = 5.0f;    // below fsr threshold (cinematic-like)
-    const float intricate = 41.0f; // >= fsr, < lama (Neon-like explainer)
-    const float hard = 125.0f;     // >= lama (Arcade scene-18 cartoon)
+    const double thr = 15.0;       // complexity threshold (NS vs MI-GAN)
+    const float uniform = 5.0f;    // below threshold (cinematic-like)
+    const float intricate = 41.0f; // >= threshold (Neon-like explainer)
 
-    SECTION("auto + uniform -> ns") {
-        REQUIRE(resolve_inpaint_method(uniform, thr, lama_thr, "auto", true, true) == "ns");
-        REQUIRE(resolve_inpaint_method(uniform, thr, lama_thr, "auto", false, false) == "ns");
+    SECTION("uniform -> ns (always, MI-GAN or not)") {
+        REQUIRE(resolve_inpaint_method(uniform, thr, true) == "ns");
+        REQUIRE(resolve_inpaint_method(uniform, thr, false) == "ns");
     }
-    SECTION("auto + intricate + xphoto -> fsr") {
-        REQUIRE(resolve_inpaint_method(intricate, thr, lama_thr, "auto", true, true) == "fsr");
+    SECTION("intricate + MI-GAN built -> migan") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, true) == "migan");
     }
-    SECTION("auto + intricate + NO xphoto -> ns (no regression vs v1.6.0 NS default)") {
-        REQUIRE(resolve_inpaint_method(intricate, thr, lama_thr, "auto", false, true) == "ns");
+    SECTION("intricate + MI-GAN NOT built -> ns (fallback)") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, false) == "ns");
     }
-    SECTION("auto NEVER selects LaMa, even on the hardest scene with LaMa built") {
-        // LaMa is ~2.4 s/frame — opt-in only; auto stays FSR/NS.
-        REQUIRE(resolve_inpaint_method(hard, thr, lama_thr, "auto", true, true) == "fsr");
-        REQUIRE(resolve_inpaint_method(hard, thr, lama_thr, "auto", false, true) == "ns");
+    SECTION("complexity == threshold counts as intricate (>=) -> migan") {
+        REQUIRE(resolve_inpaint_method(static_cast<float>(thr), thr, true) == "migan");
     }
-    SECTION("explicit ns -> ns regardless of complexity/xphoto/lama") {
-        REQUIRE(resolve_inpaint_method(hard, thr, lama_thr, "ns", true, true) == "ns");
-        REQUIRE(resolve_inpaint_method(uniform, thr, lama_thr, "ns", false, false) == "ns");
-    }
-    SECTION("explicit fsr honoured only when xphoto is compiled in") {
-        REQUIRE(resolve_inpaint_method(intricate, thr, lama_thr, "fsr", true, true) == "fsr");
-        REQUIRE(resolve_inpaint_method(uniform, thr, lama_thr, "fsr", true, true) == "fsr");
-        REQUIRE(resolve_inpaint_method(intricate, thr, lama_thr, "fsr", false, true) == "ns");
-    }
-    SECTION("complexity == fsr threshold counts as intricate (>=)") {
-        REQUIRE(resolve_inpaint_method(static_cast<float>(thr), thr, lama_thr, "auto", true, true) == "fsr");
-    }
-    SECTION("unrecognized requested value behaves like auto (safe)") {
-        REQUIRE(resolve_inpaint_method(intricate, thr, lama_thr, "bogus", true, true) == "fsr");
-        REQUIRE(resolve_inpaint_method(uniform, thr, lama_thr, "bogus", true, true) == "ns");
-    }
-
-    SECTION("lama + hard scene + LaMa built -> lama") {
-        REQUIRE(resolve_inpaint_method(hard, thr, lama_thr, "lama", true, true) == "lama");
-    }
-    SECTION("lama + hard scene + NO LaMa -> falls back to fsr (intricate + xphoto)") {
-        REQUIRE(resolve_inpaint_method(hard, thr, lama_thr, "lama", true, false) == "fsr");
-    }
-    SECTION("lama + hard scene + NO LaMa + NO xphoto -> ns") {
-        REQUIRE(resolve_inpaint_method(hard, thr, lama_thr, "lama", false, false) == "ns");
-    }
-    SECTION("lama + intricate (below lama threshold) -> fsr, not lama") {
-        REQUIRE(resolve_inpaint_method(intricate, thr, lama_thr, "lama", true, true) == "fsr");
-    }
-    SECTION("lama + uniform (below fsr threshold) -> ns") {
-        REQUIRE(resolve_inpaint_method(uniform, thr, lama_thr, "lama", true, true) == "ns");
-    }
-    SECTION("complexity == lama threshold counts as hard (>=) -> lama") {
-        REQUIRE(resolve_inpaint_method(static_cast<float>(lama_thr), thr, lama_thr, "lama", true, true) == "lama");
+    SECTION("just below threshold -> ns") {
+        REQUIRE(resolve_inpaint_method(static_cast<float>(thr) - 0.01f, thr, true) == "ns");
     }
 }

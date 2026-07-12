@@ -12,9 +12,6 @@ enum class InpaintMethod {
 #ifdef WMR_AI_DENOISE
     , AiDenoise  // FDnCNN NCNN/Vulkan AI denoise (dispatched by WatermarkEngine)
 #endif
-#ifdef WMR_AI_LAMA
-    , LaMa      // LaMa ONNX inpaint (Phase C; dispatched by WatermarkEngine)
-#endif
 };
 
 struct InpaintConfig {

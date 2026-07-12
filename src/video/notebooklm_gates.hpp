@@ -20,27 +20,16 @@ float background_complexity_score(const cv::Mat& gray_frame, const cv::Rect& mar
 bool background_is_intricate(const cv::Mat& gray_frame, const cv::Rect& mark_rect,
                              float threshold);
 
-// Resolve the per-scene inpaint method from the requested option + the scene's
-// background complexity. Pure (no VideoReader) so it can be unit-tested without
-// linking FFmpeg.
-//   complexity:      scene background-complexity score
-//   threshold:       fsr/complexity threshold — intricate (-> FSR) when
-//                    complexity >= threshold (--complexity-threshold, default 15)
-//   lama_threshold:  LaMa threshold — only the HARDEST scenes (complexity >=
-//                    lama_threshold, --lama-threshold default 60) use LaMa
-//   requested:       "auto" (FSR/NS, never LaMa) | "ns" | "fsr" | "lama"
-//   has_xphoto:      whether the build compiled opencv_contrib xphoto
-//                    (WMR_HAS_XPHOTO); passed as a bool so the function is
-//                    testable in either build configuration.
-//   has_lama:        whether the build compiled the LaMa inpainter
-//                    (WMR_AI_LAMA); same testability rationale.
-// "auto" never routes to LaMa (~2.4 s/frame CPU — infeasible as a default); LaMa
-// runs only on explicit "--notebooklm-method lama" AND the hardest scenes AND
-// when compiled in. Otherwise it falls through to FSR/NS. "ns" is the universal
-// fallback.
-std::string resolve_inpaint_method(float complexity, double threshold,
-                                   double lama_threshold,
-                                   const std::string& requested,
-                                   bool has_xphoto, bool has_lama);
+// Resolve the per-scene inpaint method from the scene's background complexity.
+// Pure (no VideoReader) so it can be unit-tested without linking FFmpeg.
+//   complexity: scene background-complexity score
+//   threshold:  intricate when complexity >= threshold (--complexity-threshold,
+//               default 15)
+//   has_migan:  whether the build compiled the MI-GAN inpainter (WMR_AI_MIGAN);
+//               passed as a bool so the function is testable in either config.
+// Returns "migan" when intricate AND MI-GAN is compiled in — the default
+// intricate-scene method — otherwise "ns". There is NO user method choice: the
+// pipeline always uses NS (uniform) + MI-GAN (intricate).
+std::string resolve_inpaint_method(float complexity, double threshold, bool has_migan);
 
 } // namespace wmr

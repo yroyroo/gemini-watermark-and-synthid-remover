@@ -53,30 +53,11 @@ bool background_is_intricate(const cv::Mat& gray_frame, const cv::Rect& mark_rec
     return background_complexity_score(gray_frame, mark_rect) >= threshold;
 }
 
-std::string resolve_inpaint_method(float complexity, double threshold,
-                                   double lama_threshold,
-                                   const std::string& requested,
-                                   bool has_xphoto, bool has_lama) {
+std::string resolve_inpaint_method(float complexity, double threshold, bool has_migan) {
     const bool intricate = complexity >= static_cast<float>(threshold);
-    const bool lama_hard = complexity >= static_cast<float>(lama_threshold);
-    if (requested == "lama") {
-        // Explicit LaMa: only the hardest scenes AND when compiled in; otherwise
-        // fall through to FSR/NS. "lama" means "LaMa for hard scenes, FSR/NS for
-        // the rest", not "LaMa on every frame".
-        if (has_lama && lama_hard) return "lama";
-        return (has_xphoto && intricate) ? "fsr" : "ns";
-    }
-    if (requested == "fsr") {
-        // Explicit FSR: honour it only when xphoto is compiled in; else NS.
-        return has_xphoto ? "fsr" : "ns";
-    }
-    if (requested == "ns") {
-        return "ns";
-    }
-    // "auto" (and any unrecognized value): route intricate backgrounds to FSR
-    // when available, otherwise NS — the bit-identical v1.6.0 default. LaMa is
-    // never auto-selected (~2.4 s/frame is infeasible as a default).
-    return (has_xphoto && intricate) ? "fsr" : "ns";
+    // MI-GAN is the default intricate-scene method (when compiled in); NS is the
+    // universal fallback for uniform scenes + when MI-GAN is unavailable.
+    return (has_migan && intricate) ? "migan" : "ns";
 }
 
 } // namespace wmr

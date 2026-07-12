@@ -332,9 +332,7 @@ static int process_video(const CliOptions& opts) {
     config.inpaint_strength = opts.inpaint_strength;
     config.scenes = opts.scenes;
     config.scene_threshold = opts.scene_threshold;
-    config.notebooklm_method = opts.notebooklm_method;
     config.notebooklm_complexity_threshold = opts.notebooklm_complexity_threshold;
-    config.notebooklm_lama_threshold = opts.notebooklm_lama_threshold;
 
     EncodeOptions encode;
     encode.codec = opts.video_codec;
@@ -512,14 +510,9 @@ int run_cli(int argc, char* argv[]) {
                          "Remove NotebookLM watermark (per-scene adaptive dispatch + NS inpaint)");
     video_cmd->add_option("--rect", opts.notebooklm_rect_str,
                            "Manual watermark rect x,y,w,h (for --notebooklm auto-detect fallback)");
-    video_cmd->add_option("--notebooklm-method", opts.notebooklm_method,
-                           "Inpaint method: auto (default) | ns | fsr | lama")
-        ->check(CLI::IsMember({"auto", "ns", "fsr", "lama"}));
     video_cmd->add_option("--complexity-threshold", opts.notebooklm_complexity_threshold,
-                           "Background-complexity floor to treat as intricate (default 15.0)");
-    video_cmd->add_option("--lama-threshold", opts.notebooklm_lama_threshold,
-                           "Complexity floor for the hardest scenes (LaMa, with "
-                           "--notebooklm-method lama; default 60.0, ~2.4 s/frame)");
+                           "Background-complexity floor above which MI-GAN is used "
+                           "(below it, NS); default 15.0");
     video_cmd->add_option("--variant", opts.video_variant_str,
                            "Force geometry: 720p-1, 720p-2, 1080p");
     video_cmd->add_flag("-f,--force", opts.force, "Skip detection");
