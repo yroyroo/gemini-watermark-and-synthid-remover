@@ -4,17 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.8.0] - 2026-07-12
+## [1.9.0] - 2026-07-12
 
-### NotebookLM: complexity-gated LaMa inpaint (opt-in) for hard backgrounds
+### NotebookLM: MI-GAN replaces FSR + LaMa as the default inpainter
 
-Adds LaMa (ONNX Runtime, the `big-lama` model) as a third NotebookLM inpaint method for the intricate/textured backgrounds FSR still blurs and NS smears — the only method that reconstructs them sharply (A/B on a complexity-125 cartoon scene: LaMa > FSR_fast > NS, no seam). Because LaMa is ~2.4 s/frame on CPU (CoreML does not help — the fp32 model doesn't compile to Metal well), it is **complexity-gated and opt-in** — it never runs under the default `--notebooklm-method auto`.
+MI-GAN (Picsart AI Research, ICCV 2023, **MIT**) replaces both FSR and LaMa as the NotebookLM intricate-scene inpainter, and it is now the **default** — there is no inpaint-method flag; the pipeline always uses **NS for uniform scenes + MI-GAN for intricate scenes** (complexity-gated via `--complexity-threshold`). MI-GAN was missed by the earlier "LaMa is the only viable" eval; a broad re-survey (MAT/FcF/ProPainter/Moebius/MxT/HINT/RETHINED/SD…) found everything else NC-licensed, no-ONNX, no-weights, diffusion-infeasible, or CUDA-only, and MI-GAN beats LaMa on every axis:
 
-- **New flags:** `--notebooklm-method lama` (routes scenes at/above `--lama-threshold` to LaMa, the rest to FSR/NS) and `--lama-threshold` (default 60.0 — only the hardest scenes).
-- **No regression:** `auto` (the default) is unchanged — still FSR/NS. `--notebooklm-method {ns,fsr}` unchanged.
-- **ONNX Runtime integration:** gated on `WMR_BUILD_AI_LAMA` (OFF by default for dev). Rather than the vcpkg `onnxruntime` port (a heavy source build that would threaten the Windows 6 h CI cap), the **official ORT 1.27.1 prebuilt** per platform is fetched at CMake configure time (SHA256-verified) and exposed as an IMPORTED shared-lib target — zero CI build time, known-good version. Verified byte-faithful: the C++ model output matches the Python reference to MAE 1e-6.
-- **Release shape change:** the macOS arm64, Linux, and Windows packages now bundle the ONNX Runtime shared lib + the ~200 MB `lama_fp32.onnx` model alongside the binary (so Linux/Windows are archives — `.tar.gz`/`.zip` — rather than single files). The macOS Intel build is LaMa-free (ORT dropped osx-x86_64 prebuilts after v1.23.0); it falls back to FSR/NS. Model tracked via Git LFS.
-- **License note:** LaMa code is Apache-2.0; the Places2 pretrained weights are license-gray for redistribution — documented in `LICENSE-THIRD-PARTY.md` (ONNX Runtime = MIT).
+| | LaMa (removed) | MI-GAN |
+|---|---|---|
+| Speed (CPU) | ~1800 ms/frame | **~225 ms** (~8× faster) |
+| Model size | 208 MB | **27 MB** (~7× smaller) |
+| License | Apache-2.0 code + Places2 weights gray-area | **MIT (code + weights)** |
+| Cartoon quality | soft (Places2-trained) | **sharp (GAN)** |
+
+- **No method flag:** `--notebooklm-method` and `--lama-threshold` removed. Just `wmr video in.mp4 --notebooklm -o out.mp4` → NS + MI-GAN automatically.
+- **MI-GAN integration:** `src/core/migan_inpainter.{hpp,cpp}` (`#ifdef WMR_AI_MIGAN`, leaked ORT singleton); feeds the whole frame (RGB **uint8** dynamic-res NCHW) + mask (0=hole/255=keep) → uint8 composited result. `--complexity-threshold` (default 15) gates NS↔MI-GAN. FSR + LaMa + the opencv_contrib xphoto dependency removed from the inpaint path (FSR was blurrier + green-artifacted on uniform scenes; LaMa was slower + soft + gray-license).
+- **Detector fix:** the explainer-mode rect `(1105,660,131,16)` → `(1085,658,153,20)` — the old one started at the spiral logo's right edge, leaving ~18px of the logo unmasked (NS/FSR/LaMa hid it by blurring; MI-GAN's precise fill exposed it). Cinematic rect was already correct.
+- **ONNX Runtime:** official 1.27.1 prebuilt per platform, fetched at CMake configure (SHA256-verified), `IMPORTED` target — zero CI build time (NOT the heavy vcpkg port). macOS Intel = MI-GAN-OFF (no osx-x86_64 ORT) → NS. GPU (CoreML) tested — *slower* via ORT (graph partitioning: 602 ms vs 225 ms CPU); a native coremltools build is a possible future macOS-only optimization.
+- **Release shape:** macOS arm64 / Linux / Windows bundle the ORT lib + the 27 MB `migan_pipeline_v2.onnx` (Git LFS, MIT) — Linux/Windows are archives (`.tar.gz`/`.zip`), macOS arm64 a tarball, macOS Intel a single binary (MI-GAN-free). Packages are far smaller than the 1.8.0-plan's 200 MB LaMa.
 
 ## [1.7.1] - 2026-07-11
 

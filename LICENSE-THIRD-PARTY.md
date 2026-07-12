@@ -1,17 +1,18 @@
 # Third-Party Licenses — `wmr` release binaries
 
 Every `wmr` release binary is a self-contained package that ships the FDnCNN AI
-denoise (NCNN + volk, an embedded model), FSR inpaint (opencv_contrib `xphoto`),
-and — as of v1.8.0 — LaMa inpaint (ONNX Runtime + a bundled model). NCNN, volk,
-FDnCNN, OpenCV/xphoto, and ONNX Runtime are linked into the package; their
-licenses are reproduced below so they travel with every download.
+denoise (NCNN + volk, an embedded model) and — as of v1.9.0 — MI-GAN inpaint
+(ONNX Runtime + a bundled model; replaces the earlier FSR/LaMa). NCNN, volk,
+FDnCNN, OpenCV (incl. the opencv_contrib `xphoto` module, still linked though FSR
+is now removed — pending a cleanup), and ONNX Runtime are linked into the
+package; their licenses are reproduced below so they travel with every download.
 
 The macOS arm64 package additionally bundles the Vulkan loader (`libvulkan`),
 MoltenVK (`libMoltenVK`), the ONNX Runtime shared lib (`libonnxruntime`), and the
-LaMa model next to the binary. The Linux and Windows packages likewise co-locate
-`libonnxruntime.so.1` / `onnxruntime.dll` and the LaMa model. The macOS Intel
-build is LaMa-free (no osx-x86_64 ONNX Runtime build exists); it falls back to
-FSR/NS for NotebookLM. MoltenVK ships its own license inside its dylib.
+MI-GAN model next to the binary. The Linux and Windows packages likewise co-locate
+`libonnxruntime.so.1` / `onnxruntime.dll` and the MI-GAN model. The macOS Intel
+build is MI-GAN-free (no osx-x86_64 ONNX Runtime build exists); it falls back to
+NS for NotebookLM. MoltenVK ships its own license inside its dylib.
 
 ---
 
@@ -166,25 +167,36 @@ SOFTWARE.
 
 ---
 
-## LaMa inpaint model — Apache-2.0 (code); Places2 weights (license-gray)
+## MI-GAN inpaint model — MIT License
 
-Sources: <https://github.com/advimman/lama> · <https://huggingface.co/Carve/LaMa-ONNX>
+Source: <https://github.com/Picsart-AI-Research/MI-GAN> · ONNX: <https://huggingface.co/andraniksargsyan/migan>
 
-`wmr` ships `assets/lama_fp32.onnx` — the "big-lama" inpainting model ported to
-ONNX by [Carve/LaMa-ONNX](https://huggingface.co/Carve/LaMa-ONNX), co-located
-with every LaMa-enabled release binary (macOS arm64, Linux, Windows). It runs
-only on the hardest NotebookLM scenes, and only when the user opts in via
-`--notebooklm-method lama`.
+`wmr` ships `assets/migan_pipeline_v2.onnx` — the MI-GAN ("A Simple Baseline for
+Image Inpainting on Mobile Devices", ICCV 2023, Picsart AI Research) model,
+co-located with every MI-GAN-enabled release binary (macOS arm64, Linux,
+Windows). It is the default NotebookLM intricate-scene inpainter (replaces the
+earlier FSR/LaMa).
 
-The **LaMa source code** is licensed under the Apache License 2.0
-(<https://github.com/advimman/lama>).
+MI-GAN's **code and weights** are licensed under the **MIT License** — clean for
+redistribution (unlike the LaMa weights it replaces, which were Places2-pretrained
+under a gray-area license).
 
-**License note on the weights:** the "big-lama" model was **pretrained on the
-Places2 dataset**. The LaMa source code is Apache-2.0, but the pretrained
-Places2 weights do not carry an explicit redistribution license — their
-licensing for redistribution is **gray-area / unclear**. This project
-redistributes the converted ONNX weights (bundled in the release packages) on
-that basis; downstream users should be aware of this uncertainty. If a
-rights-holder objects, the model can be removed from the packages without
-affecting any other `wmr` functionality (LaMa is an opt-in, complexity-gated
-inpainter; the default `--notebooklm-method auto` path uses FSR/NS only).
+Copyright (c) Picsart AI Research.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

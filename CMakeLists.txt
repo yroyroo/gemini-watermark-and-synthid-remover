@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(wmr VERSION 1.8.0 LANGUAGES CXX)
+project(wmr VERSION 1.9.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -208,19 +208,20 @@ if(WMR_BUILD_AI_DENOISE)
     target_compile_definitions(${PROJECT_NAME} PRIVATE WMR_AI_DENOISE=1)
 endif()
 
-# LaMa inpainter (ONNX Runtime, CPU) for NotebookLM intricate backgrounds — opt-in.
-# OFF by default keeps the lean dev build ORT-free. Rather than the vcpkg
-# onnxruntime port (heavy source build -> threatens the Windows 6 h CI cap), the
-# OFFICIAL ONNX Runtime prebuilt for the host platform is fetched into the build
-# tree at configure time (file(DOWNLOAD) + SHA256) and exposed as an IMPORTED
-# shared-lib target. This keeps ORT out of the CI build path entirely (no
-# build-time hit) and pins a known-good version (1.27.1 = the eval version).
-# NOTE: ORT dropped osx-x86_64 prebuilts after v1.23.0, so the macOS Intel
-# cross-build must set WMR_BUILD_AI_LAMA=OFF (LaMa unavailable there; the
-# complexity gate falls back to FSR/NS). The model (assets/lama_fp32.onnx) is
-# resolved by LamaInpainter relative to the executable at runtime.
-option(WMR_BUILD_AI_LAMA "Build LaMa inpainter (ONNX Runtime CPU) for NotebookLM hard backgrounds" OFF)
-if(WMR_BUILD_AI_LAMA)
+# MI-GAN inpainter (ONNX Runtime, CPU) for NotebookLM intricate backgrounds — the
+# DEFAULT intricate-scene method (no user flag; uniform scenes use NS). OFF by
+# default keeps the lean dev build ORT-free. Rather than the vcpkg onnxruntime
+# port (heavy source build -> threatens the Windows 6 h CI cap), the OFFICIAL
+# ONNX Runtime prebuilt for the host platform is fetched into the build tree at
+# configure time (file(DOWNLOAD) + SHA256) and exposed as an IMPORTED shared-lib
+# target. This keeps ORT out of the CI build path entirely (no build-time hit)
+# and pins a known-good version (1.27.1). NOTE: ORT dropped osx-x86_64 prebuilts
+# after v1.23.0, so the macOS Intel cross-build sets WMR_BUILD_AI_MIGAN=OFF
+# (MI-GAN unavailable there; the complexity gate falls back to NS). The model
+# (assets/migan_pipeline_v2.onnx) is resolved by MiganInpainter relative to the
+# executable at runtime.
+option(WMR_BUILD_AI_MIGAN "Build MI-GAN inpainter (ONNX Runtime CPU) for NotebookLM intricate backgrounds" OFF)
+if(WMR_BUILD_AI_MIGAN)
     set(ORT_VERSION "1.27.1")
     set(ORT_HASH_osx-arm64 "e42b77a7281cc6e55141bf44fcfbac2c782b823a491bbb6ac33c781dd991f8a6")
     set(ORT_HASH_linux-x64 "25b1ef1fea1acd210d63f8f24dc870ad6e077795ce1f54876252c6d3803c15af")
@@ -271,7 +272,7 @@ if(WMR_BUILD_AI_LAMA)
         set_property(TARGET wmr_ort APPEND PROPERTY IMPORTED_IMPLIB "${ORT_ROOT}/${ORT_IMPLIB}")
     endif()
 
-    target_sources(${PROJECT_NAME} PRIVATE src/core/lama_inpainter.cpp)
+    target_sources(${PROJECT_NAME} PRIVATE src/core/migan_inpainter.cpp)
     target_link_libraries(${PROJECT_NAME} PRIVATE wmr_ort)
     # Let a local dev build find the ORT shared lib from the build tree at runtime.
     set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY BUILD_RPATH "${ORT_ROOT}/lib")
@@ -283,15 +284,15 @@ if(WMR_BUILD_AI_LAMA)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${ORT_ROOT}/lib/onnxruntime.dll" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/onnxruntime.dll")
     endif()
-    target_compile_definitions(${PROJECT_NAME} PRIVATE WMR_AI_LAMA=1)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE WMR_AI_MIGAN=1)
 
-    # Ship the LaMa model next to the binary when it is present in assets/ so a
-    # dev build runs without the WMR_LAMA_MODEL env override.
-    if(EXISTS "${CMAKE_SOURCE_DIR}/assets/lama_fp32.onnx")
+    # Ship the MI-GAN model next to the binary when it is present in assets/ so a
+    # dev build runs without the WMR_MIGAN_MODEL env override.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/assets/migan_pipeline_v2.onnx")
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_SOURCE_DIR}/assets/lama_fp32.onnx"
-                "$<TARGET_FILE_DIR:${PROJECT_NAME}>/lama_fp32.onnx")
+                "${CMAKE_SOURCE_DIR}/assets/migan_pipeline_v2.onnx"
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}>/migan_pipeline_v2.onnx")
     endif()
 endif()
 
