@@ -18,20 +18,20 @@ A C++20 CLI tool for removing visible and invisible watermarks from images and v
 
 ### Download
 
-Prebuilt binaries for every release are on the [Releases page](https://github.com/froggeric/gemini-watermark-and-synthid-remover/releases) — no build step required. As of v1.7.0 **every asset is a single self-contained package** that ships the FDnCNN AI denoise + FSR inpaint; there is no lean/full split.
+Prebuilt binaries for every release are on the [Releases page](https://github.com/froggeric/gemini-watermark-and-synthid-remover/releases) — no build step required. As of v1.8.0 every asset is a self-contained package that ships the FDnCNN AI denoise + FSR inpaint **+ LaMa inpaint** (opt-in, for NotebookLM hard backgrounds); there is no lean/full split. The macOS arm64, Linux, and Windows packages bundle the ONNX Runtime shared lib + the ~200 MB LaMa model alongside the binary (so they're archives, not single files); the macOS Intel build is LaMa-free.
 
 | Asset | Platform | Notes |
 |-------|----------|-------|
-| `wmr-macos-arm64.tar.gz` | macOS arm64 | Bundled Vulkan/MoltenVK → GPU AI denoise out of the box. Extract and run `./wmr`. |
-| `wmr-macos-x86_64` | macOS Intel | Cross-compiled; AI runs on **CPU only** (the Intel build compiles without Vulkan — no GPU path; the arm64 build is the GPU one). |
-| `wmr-linux-x86_64` | Linux | Self-contained; GPU AI when a Vulkan loader is present, else CPU. |
-| `wmr-windows-x86_64.exe` | Windows | Self-contained; GPU AI when `vulkan-1.dll` is present, else CPU. |
+| `wmr-macos-arm64.tar.gz` | macOS arm64 | Bundled Vulkan/MoltenVK (GPU AI out of the box) + ONNX Runtime + LaMa model. Extract and run `./wmr`. |
+| `wmr-macos-x86_64` | macOS Intel | Cross-compiled; AI on **CPU only** and **no LaMa** (no osx-x86_64 ONNX Runtime build — the limited Intel build; arm64 is the full one). Single binary. |
+| `wmr-linux-x86_64.tar.gz` | Linux | Archive: binary + `libonnxruntime.so.1` + LaMa model. GPU AI when a Vulkan loader is present, else CPU. |
+| `wmr-windows-x86_64.zip` | Windows | Archive: `wmr.exe` + `onnxruntime.dll` + LaMa model. GPU AI when `vulkan-1.dll` is present, else CPU. |
 
 ```bash
-# macOS arm64 (tarball with bundled GPU driver)
+# macOS arm64 (tarball with bundled GPU driver + LaMa model)
 tar xzf wmr-macos-arm64.tar.gz && cd wmr-macos-arm64 && ./wmr --version
-# Linux / Windows / macOS Intel (single binary)
-chmod +x wmr-linux-x86_64 && ./wmr-linux-x86_64 --version
+# Linux / Windows (archives: binary + ONNX Runtime lib + LaMa model)
+tar xzf wmr-linux-x86_64.tar.gz && cd wmr-linux-x86_64 && ./wmr --version
 ```
 
 On macOS, clear Gatekeeper's quarantine if prompted: `xattr -dr com.apple.quarantine <file-or-dir>`. Third-party licenses ship in `LICENSE-THIRD-PARTY.md`.
@@ -109,8 +109,9 @@ wmr remove input_dir/ -o output_dir/ --recursive
 | `--legacy` | video | Use Veo legacy text profile |
 | `--notebooklm` | video | Remove the NotebookLM logo + wordmark (per-scene adaptive dispatch) |
 | `--rect` | video | Manual watermark rect `x,y,w,h` (NotebookLM auto-detect fallback) |
-| `--notebooklm-method` | video | NotebookLM inpaint method: `auto` (default) \| `ns` \| `fsr` |
+| `--notebooklm-method` | video | NotebookLM inpaint method: `auto` (default) \| `ns` \| `fsr` \| `lama` |
 | `--complexity-threshold` | video | Background-complexity floor to treat as intricate (default 15.0) |
+| `--lama-threshold` | video | Complexity floor for the hardest scenes (LaMa, with `--notebooklm-method lama`; default 60.0, ~2.4 s/frame) |
 | `--variant` | video | Force geometry: 720p-1, 720p-2, 1080p |
 | `--scenes` | video | Split video into separate files at scene boundaries |
 | `--scene-threshold` | video | Scene cut sensitivity 0.0-1.0 (default 0.3) |
@@ -202,7 +203,9 @@ Video processing uses pure reverse alpha blending — the same lossless method a
 
 Supports both Gemini (diamond) and Veo (text) video watermarks via `--legacy` flag.
 
-**NotebookLM** video watermarks (the rainbow logo + "NotebookLM" wordmark) use a separate path. The mark is semi-transparent and color-adaptive (not a reversible alpha overlay), so removal uses spatial inpainting after template-based auto-detection of the bottom-right mark. Processing is **per-scene**: scenes where the mark is absent are left untouched, and a background-complexity gate picks the method per scene — **FSR** (`cv::xphoto`) for intricate/textured backgrounds (kills the diamond PDE artifact NS leaves behind) and **Navier-Stokes** for uniform backgrounds.
+**NotebookLM** video watermarks (the rainbow logo + "NotebookLM" wordmark) use a separate path. The mark is semi-transparent and color-adaptive (not a reversible alpha overlay), so removal uses spatial inpainting after template-based auto-detection of the bottom-right mark. Processing is **per-scene**: a background-complexity gate picks the method per scene — **FSR** (`cv::xphoto`) for intricate/textured backgrounds (kills the diamond PDE artifact NS leaves behind) and **Navier-Stokes** for uniform backgrounds.
+
+**LaMa** (ONNX Runtime, the `big-lama` model) is an opt-in third method for the *hardest* backgrounds that FSR still blurs: `--notebooklm-method lama` routes scenes whose complexity is at or above `--lama-threshold` (default 60 — only the most intricate) to LaMa, and the rest to FSR/NS. LaMa is ~2.4 s/frame on CPU (CoreML does not help), so it **never** runs under the default `auto` — opt in only when you need the best quality on complex backgrounds and can accept the runtime. Not available in the macOS Intel build (no osx-x86_64 ONNX Runtime).
 
 - Works across cinematic, explainer, and short-portrait exports; detection is polarity-invariant (light-on-dark or dark-on-light) and robust across scene cuts.
 - If auto-detection misses the mark, specify the region manually with `--rect x,y,w,h` (measure it in a graphics editor on a full frame — see the `*_FRAME.png` reference frames).
@@ -304,7 +307,8 @@ The `wmr` launcher points the Vulkan loader at the bundled ICD manifest (`VK_ICD
 | Catch2 | Test framework (optional, default ON) |
 | NCNN | Neural-network inference for the AI denoise (optional, `WMR_BUILD_AI_DENOISE` only) |
 | volk | Vulkan meta-loader (optional, AI build only) |
-| Vulkan loader + MoltenVK | Vulkan/Metal GPU for the AI denoise (optional; bundled into the `wmr-macos-arm64-ai` release) |
+| Vulkan loader + MoltenVK | Vulkan/Metal GPU for the AI denoise (optional; bundled into the `wmr-macos-arm64` release) |
+| ONNX Runtime | Neural-network inference for the LaMa inpainter (optional, `WMR_BUILD_AI_LAMA` only; fetched prebuilt at configure time) |
 | CMake + vcpkg | Build system and package management |
 
 ## Source Projects
@@ -317,6 +321,8 @@ This project builds on research and techniques from:
 - [KAIR / FDnCNN](https://github.com/csjcai/KAIR) — FDnCNN denoising model (MIT), used by the optional AI denoise
 - [Tencent/ncnn](https://github.com/Tencent/ncnn) — NCNN neural-network inference framework (BSD-3-Clause), used by the optional AI denoise
 - [zeux/volk](https://github.com/zeux/volk) — Vulkan meta-loader (MIT), used by the optional AI denoise
+- [advimman/lama](https://github.com/advimman/lama) + [Carve/LaMa-ONNX](https://huggingface.co/Carve/LaMa-ONNX) — LaMa inpainting model (Apache-2.0 code; Places2 weights license-gray), used by the optional NotebookLM LaMa inpainter
+- [microsoft/onnxruntime](https://github.com/microsoft/onnxruntime) — ONNX Runtime inference engine (MIT), used by the optional LaMa inpainter
 
 ## License
 

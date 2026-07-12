@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.0] - 2026-07-12
+
+### NotebookLM: complexity-gated LaMa inpaint (opt-in) for hard backgrounds
+
+Adds LaMa (ONNX Runtime, the `big-lama` model) as a third NotebookLM inpaint method for the intricate/textured backgrounds FSR still blurs and NS smears — the only method that reconstructs them sharply (A/B on a complexity-125 cartoon scene: LaMa > FSR_fast > NS, no seam). Because LaMa is ~2.4 s/frame on CPU (CoreML does not help — the fp32 model doesn't compile to Metal well), it is **complexity-gated and opt-in** — it never runs under the default `--notebooklm-method auto`.
+
+- **New flags:** `--notebooklm-method lama` (routes scenes at/above `--lama-threshold` to LaMa, the rest to FSR/NS) and `--lama-threshold` (default 60.0 — only the hardest scenes).
+- **No regression:** `auto` (the default) is unchanged — still FSR/NS. `--notebooklm-method {ns,fsr}` unchanged.
+- **ONNX Runtime integration:** gated on `WMR_BUILD_AI_LAMA` (OFF by default for dev). Rather than the vcpkg `onnxruntime` port (a heavy source build that would threaten the Windows 6 h CI cap), the **official ORT 1.27.1 prebuilt** per platform is fetched at CMake configure time (SHA256-verified) and exposed as an IMPORTED shared-lib target — zero CI build time, known-good version. Verified byte-faithful: the C++ model output matches the Python reference to MAE 1e-6.
+- **Release shape change:** the macOS arm64, Linux, and Windows packages now bundle the ONNX Runtime shared lib + the ~200 MB `lama_fp32.onnx` model alongside the binary (so Linux/Windows are archives — `.tar.gz`/`.zip` — rather than single files). The macOS Intel build is LaMa-free (ORT dropped osx-x86_64 prebuilts after v1.23.0); it falls back to FSR/NS. Model tracked via Git LFS.
+- **License note:** LaMa code is Apache-2.0; the Places2 pretrained weights are license-gray for redistribution — documented in `LICENSE-THIRD-PARTY.md` (ONNX Runtime = MIT).
+
 ## [1.7.1] - 2026-07-11
 
 ### NotebookLM: inpaint every scene (presence gate removed)
