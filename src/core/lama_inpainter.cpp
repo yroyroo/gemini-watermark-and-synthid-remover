@@ -95,7 +95,12 @@ bool LamaInpainter::initialize() {
         opts.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
         opts.SetLogSeverityLevel(3);  // warnings + errors only
 
-        m_impl->session = std::make_unique<Ort::Session>(m_impl->env, model.c_str(), opts);
+        // ORT's path overload takes ORTCHAR_T* = wchar_t on Windows, char on POSIX.
+        // std::filesystem::path::c_str() returns the native value_type for either,
+        // so the same call compiles on all platforms (a bare char* fails on MSVC).
+        m_impl->session = std::make_unique<Ort::Session>(m_impl->env,
+                                                          std::filesystem::path(model).c_str(),
+                                                          opts);
 
         Ort::AllocatorWithDefaultOptions alloc;
         m_impl->in_image = m_impl->session->GetInputNameAllocated(0, alloc).get();
