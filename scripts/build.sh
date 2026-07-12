@@ -17,6 +17,7 @@
 #   RUN_TESTS=0 scripts/build.sh     # skip tests
 #   BUILD_DIR=build-alt scripts/build.sh
 #   WMR_AI_DENOISE=1 scripts/build.sh  # FDnCNN AI denoise (NCNN/Vulkan)
+#   WMR_AI_MIGAN=1 scripts/build.sh    # MI-GAN NotebookLM inpainter (ONNX Runtime)
 set -euo pipefail
 
 BUILD_TYPE="${BUILD_TYPE:-Release}"
@@ -26,6 +27,10 @@ BUILD_DIR="${BUILD_DIR:-build}"
 # vulkan/volk Homebrew deps, inits the NCNN submodule, and enables
 # -DWMR_BUILD_AI_DENOISE=ON. Unset/0 keeps the lean default build unchanged.
 AI_DENOISE="${WMR_AI_DENOISE:-0}"
+# When WMR_AI_MIGAN=1, build the MI-GAN NotebookLM inpainter (ONNX Runtime).
+# No extra deps — ONNX Runtime is fetched as an official prebuilt at configure
+# time. Unset/0 keeps MI-GAN out of the build (NS-only NotebookLM path).
+AI_MIGAN="${WMR_AI_MIGAN:-0}"
 
 DEPS=(opencv fftw ffmpeg catch2 fmt spdlog cli11)
 
@@ -86,7 +91,8 @@ cmake -S . -B "${BUILD_DIR}" -G Ninja \
   -DFFTW3f_DIR="$(brew --prefix fftw)/lib/cmake/fftw3" \
   -DFFMPEG_ROOT="$(brew --prefix ffmpeg)" \
   -DWMR_BUILD_TESTS=ON \
-  $([ "${AI_DENOISE}" = "1" ] && echo "-DWMR_BUILD_AI_DENOISE=ON")
+  $([ "${AI_DENOISE}" = "1" ] && echo "-DWMR_BUILD_AI_DENOISE=ON") \
+  $([ "${AI_MIGAN}" = "1" ] && echo "-DWMR_BUILD_AI_MIGAN=ON")
 
 # 4. Build.
 cmake --build "${BUILD_DIR}" --parallel
