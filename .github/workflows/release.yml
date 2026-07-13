@@ -224,6 +224,10 @@ jobs:
           otool -L /tmp/verify/wmr-macos-arm64/wmr.bin | grep -i CoreML
           ! otool -L /tmp/verify/wmr-macos-arm64/wmr.bin | grep -i onnxruntime
           test -d /tmp/verify/wmr-macos-arm64/migan_512_places2_fp16.mlpackage
+          # 1.10.1: --notebooklm-method flag shipped (routing logic is unit-tested
+          # in notebooklm_gates_test on the tests job; a full video smoke needs a
+          # committed NotebookLM clip — deferred).
+          /tmp/verify/wmr-macos-arm64/wmr video --help | grep -q -- "--notebooklm-method"
 
       - uses: actions/upload-artifact@v4
         with:

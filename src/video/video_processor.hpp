@@ -21,8 +21,12 @@ struct VideoWatermarkConfig {
     std::optional<cv::Rect> notebooklm_rect;  // --rect x,y,w,h override
     double scene_threshold = 0.4;
     // NotebookLM adaptive dispatch: uniform scenes -> NS, intricate scenes ->
-    // MI-GAN (when WMR_AI_MIGAN; else NS). No user method flag — always NS+MI-GAN.
+    // MI-GAN (when WMR_AI_MIGAN; else NS). On Apple Silicon the default is
+    // MI-GAN-everywhere (the ANE makes it fast); elsewhere the complexity gate
+    // applies. --notebooklm-method {auto|ns|migan} overrides ("auto" = platform
+    // default). NS is always the MI-GAN-unavailable fallback.
     double notebooklm_complexity_threshold = 15.0; // --complexity-threshold (intricate -> MI-GAN if score >= this)
+    std::string notebooklm_method = "auto";        // --notebooklm-method {auto|ns|migan}
 };
 
 struct VideoResult {

@@ -110,6 +110,7 @@ wmr remove input_dir/ -o output_dir/ --recursive
 | `--notebooklm` | video | Remove the NotebookLM logo + wordmark (per-scene MI-GAN/NS inpaint) |
 | `--rect` | video | Manual watermark rect `x,y,w,h` (NotebookLM auto-detect fallback) |
 | `--complexity-threshold` | video | Background-complexity floor above which MI-GAN is used (below it, NS); default 15.0 |
+| `--notebooklm-method` | video | NotebookLM inpaint method: `auto` (platform default) \| `ns` \| `migan` (1.10.1+) |
 | `--variant` | video | Force geometry: 720p-1, 720p-2, 1080p |
 | `--scenes` | video | Split video into separate files at scene boundaries |
 | `--scene-threshold` | video | Scene cut sensitivity 0.0-1.0 (default 0.3) |
@@ -201,7 +202,7 @@ Video processing uses pure reverse alpha blending — the same lossless method a
 
 Supports both Gemini (diamond) and Veo (text) video watermarks via `--legacy` flag.
 
-**NotebookLM** video watermarks (the rainbow logo + "NotebookLM" wordmark) use a separate path. The mark is semi-transparent and color-adaptive (not a reversible alpha overlay), so removal uses spatial inpainting after template-based auto-detection of the bottom-right mark. Processing is **per-scene**: a background-complexity gate picks the method per scene — **MI-GAN** (CoreML on macOS, ONNX Runtime on Linux/Windows; MIT, mobile-optimized) for intricate/textured backgrounds and **Navier-Stokes** for uniform ones. There is no method flag — the pipeline always uses NS + MI-GAN.
+**NotebookLM** video watermarks (the rainbow logo + "NotebookLM" wordmark) use a separate path. The mark is semi-transparent and color-adaptive (not a reversible alpha overlay), so removal uses spatial inpainting after template-based auto-detection of the bottom-right mark. Processing is **per-scene**: a background-complexity gate picks the method per scene — **MI-GAN** (CoreML on macOS, ONNX Runtime on Linux/Windows; MIT, mobile-optimized) for intricate/textured backgrounds and **Navier-Stokes** for uniform ones. There is no method flag by default — on Apple Silicon (v1.10.1+) the default is MI-GAN on **every** scene (the Neural Engine makes it fast enough that the NS-for-uniform shortcut is moot; A/B-verified no hallucination on uniform backgrounds), and elsewhere the complexity gate applies. `--notebooklm-method {auto|ns|migan}` overrides (`auto` = platform default; `ns`/`migan` force one); NS is always the fallback when MI-GAN is unavailable.
 
 **MI-GAN** is the default intricate-scene inpainter (replaces the earlier FSR/LaMa), MIT-licensed, sharper than both predecessors on cartoons/textures and more robust. `--complexity-threshold` (default 15) controls the NS↔MI-GAN boundary. **macOS (v1.10.0)** runs MI-GAN as a native CoreML fp16 model on the Neural Engine — ~28 ms/frame (~11× faster than the previous ONNX-Runtime CPU path; A/B-verified to match it within Δ1.9/255), requires macOS 14+, and now also covers Intel Macs. (The earlier "CoreML is slower" finding was ONNX Runtime's *CoreML execution provider* — its graph-partitioning overhead, not CoreML itself; a native `coremltools` mlprogram avoids it.) **Linux/Windows** run MI-GAN on ONNX Runtime CPU (~225 ms/frame).
 

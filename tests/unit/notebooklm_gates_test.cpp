@@ -56,20 +56,41 @@ TEST_CASE("NotebookLM method routing: resolve_inpaint_method", "[notebooklm]") {
     const float uniform = 5.0f;    // below threshold (cinematic-like)
     const float intricate = 41.0f; // >= threshold (Neon-like explainer)
 
-    SECTION("uniform -> ns (always, MI-GAN or not)") {
-        REQUIRE(resolve_inpaint_method(uniform, thr, true) == "ns");
-        REQUIRE(resolve_inpaint_method(uniform, thr, false) == "ns");
+    // --- gated platform (non-arm64; the 1.9.0 complexity gate) ---
+    SECTION("gated: uniform -> ns (always, MI-GAN or not)") {
+        REQUIRE(resolve_inpaint_method(uniform, thr, true,  "auto", "gated") == "ns");
+        REQUIRE(resolve_inpaint_method(uniform, thr, false, "auto", "gated") == "ns");
     }
-    SECTION("intricate + MI-GAN built -> migan") {
-        REQUIRE(resolve_inpaint_method(intricate, thr, true) == "migan");
+    SECTION("gated: intricate + MI-GAN built -> migan") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, true, "auto", "gated") == "migan");
     }
-    SECTION("intricate + MI-GAN NOT built -> ns (fallback)") {
-        REQUIRE(resolve_inpaint_method(intricate, thr, false) == "ns");
+    SECTION("gated: intricate + MI-GAN NOT built -> ns (fallback)") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, false, "auto", "gated") == "ns");
     }
-    SECTION("complexity == threshold counts as intricate (>=) -> migan") {
-        REQUIRE(resolve_inpaint_method(static_cast<float>(thr), thr, true) == "migan");
+    SECTION("gated: complexity == threshold counts as intricate (>=) -> migan") {
+        REQUIRE(resolve_inpaint_method(static_cast<float>(thr), thr, true, "auto", "gated") == "migan");
     }
-    SECTION("just below threshold -> ns") {
-        REQUIRE(resolve_inpaint_method(static_cast<float>(thr) - 0.01f, thr, true) == "ns");
+    SECTION("gated: just below threshold -> ns") {
+        REQUIRE(resolve_inpaint_method(static_cast<float>(thr) - 0.01f, thr, true, "auto", "gated") == "ns");
+    }
+
+    // --- arm64-auto: MI-GAN everywhere, complexity ignored ---
+    SECTION("arm64-auto: MI-GAN everywhere regardless of complexity") {
+        REQUIRE(resolve_inpaint_method(uniform,   thr, true, "auto", "migan") == "migan");
+        REQUIRE(resolve_inpaint_method(intricate, thr, true, "auto", "migan") == "migan");
+    }
+    SECTION("arm64-auto: no MI-GAN compiled -> ns fallback") {
+        REQUIRE(resolve_inpaint_method(uniform, thr, false, "auto", "migan") == "ns");
+    }
+
+    // --- explicit overrides win over the platform default ---
+    SECTION("force ns overrides arm64 migan default") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, true, "ns", "migan") == "ns");
+    }
+    SECTION("force migan on gated platform, MI-GAN built -> migan (ignores complexity)") {
+        REQUIRE(resolve_inpaint_method(uniform, thr, true, "migan", "gated") == "migan");
+    }
+    SECTION("force migan, MI-GAN NOT built -> ns fallback") {
+        REQUIRE(resolve_inpaint_method(intricate, thr, false, "migan", "gated") == "ns");
     }
 }

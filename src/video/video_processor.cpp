@@ -734,15 +734,46 @@ VideoResult VideoProcessor::process_notebooklm(const std::string& input_path,
     }
     spdlog::info("NotebookLM: {} scene(s)", scenes.size());
 
-    // 4. Per-scene complexity (separate temp reader so the main decode reader
-    //    stays pristine). Every scene is inpainted — template-matching presence
-    //    is unreliable for this semi-transparent, color-adaptive mark (a
-    //    faint-but-present mark scores the same ~0.34-0.43 as a genuinely-absent
-    //    scene), so skipping risked leaving a visible watermark. Inpainting an
-    //    already-clean patch is imperceptible. The complexity score only routes
-    //    FSR vs NS.
+    // 4. Resolve the platform default + whether the complexity analysis is needed.
+    //    --notebooklm-method {auto|ns|migan}: "auto" defers to the platform
+    //    default; "ns"/"migan" force one. The platform default is MI-GAN-everywhere
+    //    only on Apple Silicon (the Neural Engine makes MI-GAN fast, ~28 ms/frame);
+    //    elsewhere MI-GAN is slow (ORT-CPU ~225 ms, or CoreML without an ANE), so
+    //    the complexity gate (NS for uniform, MI-GAN for intricate) is kept. NS is
+    //    always the fallback when MI-GAN is unavailable (not built, or model failed
+    //    to load — the latter is caught by inpaint_mark_roi's is_ready() check).
+    const bool has_migan =
+#if defined(WMR_AI_MIGAN)
+        true;
+#else
+        false;
+#endif
+#if defined(WMR_AI_MIGAN_COREML) && defined(__arm64__)
+    // Native Apple Silicon: MI-GAN runs on the ANE. x86_64 — including a Rosetta-
+    // translated arm64 binary, which compiles without __arm64__ — keeps the gate.
+    static constexpr const char* kPlatformDefault = "migan";
+#else
+    static constexpr const char* kPlatformDefault = "gated";
+#endif
+    if (config.notebooklm_method == "migan" && !has_migan) {
+        spdlog::warn("--notebooklm-method migan ignored (MI-GAN not built); using NS");
+    }
+
+    // The complexity analysis pass (a full sequential decode + Sobel per scene)
+    // is only needed when the gate will actually be consulted: auto on a gated
+    // platform. Forced ns/migan and arm64-auto skip it entirely.
+    const bool need_complexity =
+        (config.notebooklm_method == "auto" && std::string(kPlatformDefault) == "gated");
+
+    // 4a. Per-scene complexity (separate temp reader so the main decode reader
+    //     stays pristine). Every scene is inpainted — template-matching presence
+    //     is unreliable for this semi-transparent, color-adaptive mark (a
+    //     faint-but-present mark scores the same ~0.34-0.43 as a genuinely-absent
+    //     scene), so skipping risked leaving a visible watermark. Inpainting an
+    //     already-clean patch is imperceptible. The complexity score only routes
+    //     NS vs MI-GAN (on gated platforms).
     std::vector<float> scene_complexity(scenes.size(), 0.0f);
-    {
+    if (need_complexity) {
         VideoReader areader;
         const bool analysis_ok = areader.open(input_path);
         if (!analysis_ok) {
@@ -757,23 +788,18 @@ VideoResult VideoProcessor::process_notebooklm(const std::string& input_path,
                          i + 1, scenes.size(), scenes[i].start_frame, scenes[i].end_frame,
                          scene_complexity[i]);
         }
+    } else {
+        spdlog::info("NotebookLM: complexity analysis skipped (method={}, platform default={})",
+                     config.notebooklm_method, kPlatformDefault);
     }
 
-    // 4b. Resolve the per-scene inpaint method from the complexity gate. There is
-    //     no user method choice — the pipeline always uses NS (uniform) + MI-GAN
-    //     (intricate). Intricate scenes (complexity >= notebooklm_complexity_threshold)
-    //     use MI-GAN when WMR_AI_MIGAN, else NS.
-    const bool has_migan =
-#if defined(WMR_AI_MIGAN)
-        true;
-#else
-        false;
-#endif
+    // 4b. Resolve the per-scene inpaint method.
     std::vector<std::string> scene_method(scenes.size());
     bool warned_no_migan = false;
     for (size_t i = 0; i < scenes.size(); ++i) {
         scene_method[i] = resolve_inpaint_method(
-            scene_complexity[i], config.notebooklm_complexity_threshold, has_migan);
+            scene_complexity[i], config.notebooklm_complexity_threshold,
+            has_migan, config.notebooklm_method, kPlatformDefault);
         if (has_migan && scene_method[i] == "ns" &&
             scene_complexity[i] >= static_cast<float>(config.notebooklm_complexity_threshold) &&
             !warned_no_migan) {
@@ -782,8 +808,13 @@ VideoResult VideoProcessor::process_notebooklm(const std::string& input_path,
             spdlog::warn("NotebookLM: MI-GAN model unavailable; using NS");
             warned_no_migan = true;
         }
-        spdlog::info("NotebookLM scene {}/{}: complexity={:.1f} -> inpaint({})",
-                     i + 1, scenes.size(), scene_complexity[i], scene_method[i]);
+        if (need_complexity) {
+            spdlog::info("NotebookLM scene {}/{}: complexity={:.1f} -> inpaint({})",
+                         i + 1, scenes.size(), scene_complexity[i], scene_method[i]);
+        } else {
+            spdlog::info("NotebookLM scene {}/{}: complexity=n/a -> inpaint({})",
+                         i + 1, scenes.size(), scene_method[i]);
+        }
     }
 
     // 5. Open output writer.

@@ -333,6 +333,10 @@ static int process_video(const CliOptions& opts) {
     config.scenes = opts.scenes;
     config.scene_threshold = opts.scene_threshold;
     config.notebooklm_complexity_threshold = opts.notebooklm_complexity_threshold;
+    config.notebooklm_method = opts.notebooklm_method;
+    if (opts.notebooklm_method != "auto" && config.profile != VideoProfile::NotebookLM) {
+        spdlog::warn("--notebooklm-method ignored (only valid with --notebooklm)");
+    }
 
     EncodeOptions encode;
     encode.codec = opts.video_codec;
@@ -507,12 +511,15 @@ int run_cli(int argc, char* argv[]) {
     video_cmd->add_flag("--legacy", opts.legacy_profile,
                          "Use Veo legacy text profile");
     video_cmd->add_flag("--notebooklm", opts.notebooklm_profile,
-                         "Remove NotebookLM watermark (per-scene adaptive dispatch + NS inpaint)");
+                         "Remove NotebookLM watermark (per-scene adaptive MI-GAN/NS inpaint)");
     video_cmd->add_option("--rect", opts.notebooklm_rect_str,
                            "Manual watermark rect x,y,w,h (for --notebooklm auto-detect fallback)");
     video_cmd->add_option("--complexity-threshold", opts.notebooklm_complexity_threshold,
                            "Background-complexity floor above which MI-GAN is used "
                            "(below it, NS); default 15.0");
+    video_cmd->add_option("--notebooklm-method", opts.notebooklm_method,
+                           "NotebookLM inpaint method: auto (platform default) | ns | migan")
+        ->check(CLI::IsMember({"auto", "ns", "migan"}));
     video_cmd->add_option("--variant", opts.video_variant_str,
                            "Force geometry: 720p-1, 720p-2, 1080p");
     video_cmd->add_flag("-f,--force", opts.force, "Skip detection");

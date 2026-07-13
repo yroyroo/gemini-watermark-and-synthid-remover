@@ -53,10 +53,20 @@ bool background_is_intricate(const cv::Mat& gray_frame, const cv::Rect& mark_rec
     return background_complexity_score(gray_frame, mark_rect) >= threshold;
 }
 
-std::string resolve_inpaint_method(float complexity, double threshold, bool has_migan) {
+std::string resolve_inpaint_method(float complexity, double threshold, bool has_migan,
+                                   const std::string& requested,
+                                   const std::string& platform_default) {
+    // Explicit user override wins (subject to MI-GAN availability).
+    if (requested == "ns")    return "ns";
+    if (requested == "migan") return has_migan ? "migan" : "ns";
+
+    // requested == "auto": defer to the platform default.
+    if (platform_default == "migan") return has_migan ? "migan" : "ns";
+
+    // platform_default == "gated": the 1.9.0 complexity gate. MI-GAN is the
+    // default intricate-scene method (when compiled in); NS is the universal
+    // fallback for uniform scenes + when MI-GAN is unavailable.
     const bool intricate = complexity >= static_cast<float>(threshold);
-    // MI-GAN is the default intricate-scene method (when compiled in); NS is the
-    // universal fallback for uniform scenes + when MI-GAN is unavailable.
     return (has_migan && intricate) ? "migan" : "ns";
 }
 
