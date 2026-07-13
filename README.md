@@ -26,15 +26,15 @@ Grab a prebuilt binary from the [Releases page](https://github.com/froggeric/gem
 
 | Asset | Platform | Run |
 |-------|----------|-----|
-| `wmr-macos-arm64.tar.gz` | macOS 14+ (Apple Silicon) | `tar xzf wmr-macos-arm64.tar.gz && cd wmr-macos-arm64 && ./wmr` |
-| `wmr-macos-x86_64.tar.gz` | macOS 14+ (Intel) | `tar xzf wmr-macos-x86_64.tar.gz && cd wmr-macos-x86_64 && ./wmr` |
+| `wmr-macos-arm64.zip` | macOS 14+ (Apple Silicon) | `unzip wmr-macos-arm64.zip && cd wmr-macos-arm64 && ./wmr` |
+| `wmr-macos-x86_64.zip` | macOS 14+ (Intel) | `unzip wmr-macos-x86_64.zip && cd wmr-macos-x86_64 && ./wmr` |
 | `wmr-linux-x86_64.tar.gz` | Linux | `tar xzf wmr-linux-x86_64.tar.gz && cd wmr-linux-x86_64 && ./wmr` |
 | `wmr-windows-x86_64.zip` | Windows | extract, run `wmr.exe` |
 
 - **macOS** ships native **CoreML** MI-GAN (Neural Engine, ~28 ms/frame). macOS 14+ required.
 - **Linux/Windows** ship **ONNX Runtime** MI-GAN (~225 ms/frame, CPU).
 - AI denoise (FDnCNN) uses the GPU via Vulkan/MoltenVK when available, else the CPU.
-- If macOS Gatekeeper blocks the binary: `xattr -dr com.apple.quarantine <extracted-dir>`.
+- macOS builds are Developer ID signed and notarized, so Gatekeeper allows them on first launch (a one-time online check). If Gatekeeper still blocks a build (for example on an offline machine), run `xattr -dr com.apple.quarantine <extracted-dir>`.
 - Third-party licenses: [`LICENSE-THIRD-PARTY.md`](LICENSE-THIRD-PARTY.md).
 
 ### 2. Remove your watermark

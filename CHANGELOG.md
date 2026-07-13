@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### macOS: Developer ID signing + notarization
+
+The macOS arm64 and x86_64 packages are now **Developer ID signed + notarized**.
+Gatekeeper allows them on first launch (a one-time online check) with no
+`xattr -dr com.apple.quarantine` step. Distribution format changed `.tar.gz` to
+`.zip` (tar.gz discards the notarization ticket's extended attributes). Run
+commands in the README download table updated accordingly.
+
+- CI imports a "Developer ID Application" cert from a GitHub secret, signs every
+  dylib (libvulkan, MoltenVK) and the Mach-O executables with hardened runtime,
+  then submits the zip to Apple's notary service via an App Store Connect API key.
+- Signing is gated on the `MACOS_CERTIFICATE` secret: if absent, the build ships
+  the old ad-hoc/unsigned artifacts in a `.zip` (never crashes the release).
+- Linux and Windows are unchanged.
+
 ## [1.10.1] - 2026-07-13
 
 ### NotebookLM: MI-GAN-everywhere on Apple Silicon + `--notebooklm-method` toggle

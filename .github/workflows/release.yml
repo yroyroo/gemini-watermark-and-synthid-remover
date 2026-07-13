@@ -11,7 +11,7 @@ env:
 jobs:
   # Single full-package build per (OS, arch). Every release binary ships the
   # FDnCNN AI denoise (NCNN+Vulkan) + MI-GAN (ONNX Runtime, the default
-  # NotebookLM intricate-scene inpainter) — no lean/full split, no FSR/LaMa.
+  # NotebookLM intricate-scene inpainter), no lean/full split, no FSR/LaMa.
   # Vulkan + MI-GAN handling:
   #   - macOS arm64: native + Vulkan_LIBRARY hard-link; bundles the Vulkan loader
   #     + MoltenVK (out-of-the-box GPU) + libonnxruntime + the 27MB MI-GAN model.
@@ -44,7 +44,7 @@ jobs:
             binary: build/wmr
             macos_arch: x86_64
             vcpkg_triplet: x64-osx
-            enable_migan: true   # 1.10.0: CoreML (system framework, arch-neutral .mlpackage) — Intel Macs gain MI-GAN
+            enable_migan: true   # 1.10.0: CoreML (system framework, arch-neutral .mlpackage), Intel Macs gain MI-GAN
           - os: ubuntu-latest
             artifact: wmr-linux-x86_64
             binary: build/wmr
@@ -168,27 +168,86 @@ jobs:
           ${{ matrix.binary }} remove test-images/2400x1792-test1-gemini.png --denoise ai -o smoke_out.png
           test -f smoke_out.png
 
-      - name: Package (macOS arm64 tarball)
-        if: runner.os == 'macOS' && matrix.macos_arch == 'arm64'
+      - name: Import code-signing certificate
+        # Imports the Developer ID Application cert (from secrets) into an
+        # ephemeral keychain so the packaging steps can sign + notarize. Gated
+        # at the step level: if the secret is absent the step is skipped and the
+        # unsigned-fallback packaging steps run instead. The secret value never
+        # flows into an env var used for gating (only into the import below).
+        if: runner.os == 'macOS' && secrets.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
-          mkdir -p dist
-          ./scripts/bundle_macos_vulkan.sh build/wmr staging/wmr-macos-arm64
-          # 1.10.0: macOS uses native CoreML (no ORT). Ship the .mlpackage dir
-          # (the ORT .onnx + libonnxruntime dylib are gone from mac).
-          cp -R assets/migan_512_places2_fp16.mlpackage staging/wmr-macos-arm64/
-          tar -czf dist/${{ matrix.artifact }}.tar.gz -C staging wmr-macos-arm64
+          set -euo pipefail
+          KC="wmr-build.keychain-db"
+          PP="$(uuidgen)"                       # random keychain password (macOS has uuidgen)
+          echo "::add-mask::$PP"
+          echo "::add-mask::$MACOS_CERTIFICATE_PASSWORD"
+          # macOS base64 decode flag is -D (BSD), NOT --decode (GNU).
+          printf '%s' "$MACOS_CERTIFICATE" | base64 -D > /tmp/cert.p12
+          chmod 600 /tmp/cert.p12
+          security create-keychain -p "$PP" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$PP" "$KC"
+          # -T adds trusted apps (no blanket -A). codesign signs; security reads for notarytool.
+          security import /tmp/cert.p12 -P "$MACOS_CERTIFICATE_PASSWORD" \
+              -t cert -f pkcs12 -k "$KC" \
+              -T /usr/bin/codesign -T /usr/bin/security
+          rm -f /tmp/cert.p12
+          # Prepend the temp keychain to the user search list so find-identity/codesign
+          # find the cert FIRST. Capture the existing list into an array (quoted),
+          # build the new list, set it as ONE argument.
+          OLD_KCS=()
+          while IFS= read -r line; do
+              [ -n "$line" ] && OLD_KCS+=("${line//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KC" "${OLD_KCS[@]}"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PP" "$KC"
 
-      - name: Package (macOS x86_64 tarball)
-        if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64'
+      - name: Package + sign + notarize (macOS arm64)
+        if: runner.os == 'macOS' && matrix.macos_arch == 'arm64' && secrets.MACOS_CERTIFICATE != ''
+        env:
+          AC_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          AC_API_KEY_ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          AC_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: |
-          # 1.10.0: x86_64 now ships CoreML MI-GAN too (system framework +
-          # arch-neutral .mlpackage). Becomes a tarball (was a bare binary) so
-          # the .mlpackage can sit next to it.
+          set -euo pipefail
+          mkdir -p dist staging/wmr-macos-arm64
+          ./scripts/bundle_macos_vulkan.sh build/wmr staging/wmr-macos-arm64
+          cp -R assets/migan_512_places2_fp16.mlpackage staging/wmr-macos-arm64/
+          ./scripts/sign_and_notarize_macos.sh staging/wmr-macos-arm64 dist/wmr-macos-arm64.zip
+
+      - name: Package (macOS arm64, unsigned fallback)
+        if: runner.os == 'macOS' && matrix.macos_arch == 'arm64' && secrets.MACOS_CERTIFICATE == ''
+        run: |
+          mkdir -p dist staging/wmr-macos-arm64
+          ./scripts/bundle_macos_vulkan.sh build/wmr staging/wmr-macos-arm64
+          cp -R assets/migan_512_places2_fp16.mlpackage staging/wmr-macos-arm64/
+          ditto -c -k --keepParent staging/wmr-macos-arm64 dist/wmr-macos-arm64.zip
+
+      - name: Package + sign + notarize (macOS x86_64)
+        if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64' && secrets.MACOS_CERTIFICATE != ''
+        env:
+          AC_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          AC_API_KEY_ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          AC_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          set -euo pipefail
           mkdir -p dist staging/wmr-macos-x86_64
           cp build/wmr staging/wmr-macos-x86_64/wmr
           chmod +x staging/wmr-macos-x86_64/wmr
           cp -R assets/migan_512_places2_fp16.mlpackage staging/wmr-macos-x86_64/
-          tar -czf dist/${{ matrix.artifact }}.tar.gz -C staging wmr-macos-x86_64
+          ./scripts/sign_and_notarize_macos.sh staging/wmr-macos-x86_64 dist/wmr-macos-x86_64.zip
+
+      - name: Package (macOS x86_64, unsigned fallback)
+        if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64' && secrets.MACOS_CERTIFICATE == ''
+        run: |
+          mkdir -p dist staging/wmr-macos-x86_64
+          cp build/wmr staging/wmr-macos-x86_64/wmr
+          chmod +x staging/wmr-macos-x86_64/wmr
+          cp -R assets/migan_512_places2_fp16.mlpackage staging/wmr-macos-x86_64/
+          ditto -c -k --keepParent staging/wmr-macos-x86_64 dist/wmr-macos-x86_64.zip
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -217,17 +276,46 @@ jobs:
 
       - name: Verify packaged macOS arm64 artifact runs (CPU path)
         if: runner.os == 'macOS' && matrix.macos_arch == 'arm64'
+        env:
+          HAS_CERT: "${{ secrets.MACOS_CERTIFICATE != '' && '1' || '' }}"
         run: |
-          mkdir -p /tmp/verify && tar -xzf dist/${{ matrix.artifact }}.tar.gz -C /tmp/verify
-          VK_ICD_FILENAMES=/nonexistent /tmp/verify/wmr-macos-arm64/wmr remove test-images/2400x1792-test1-gemini.png --denoise ai -o /tmp/verify_out.png
-          # 1.10.0: assert native CoreML (no ORT) + the .mlpackage shipped.
-          otool -L /tmp/verify/wmr-macos-arm64/wmr.bin | grep -i CoreML
-          ! otool -L /tmp/verify/wmr-macos-arm64/wmr.bin | grep -i onnxruntime
-          test -d /tmp/verify/wmr-macos-arm64/migan_512_places2_fp16.mlpackage
-          # 1.10.1: --notebooklm-method flag shipped (routing logic is unit-tested
-          # in notebooklm_gates_test on the tests job; a full video smoke needs a
-          # committed NotebookLM clip — deferred).
-          /tmp/verify/wmr-macos-arm64/wmr video --help | grep -q -- "--notebooklm-method"
+          set -euo pipefail
+          mkdir -p /tmp/verify
+          ditto -x -k dist/wmr-macos-arm64.zip /tmp/verify/
+          ROOT=/tmp/verify/wmr-macos-arm64
+          VK_ICD_FILENAMES=/nonexistent "$ROOT/wmr" remove test-images/2400x1792-test1-gemini.png --denoise ai -o /tmp/verify_out.png
+          # assert native CoreML (no ORT) + the .mlpackage shipped.
+          otool -L "$ROOT/wmr.bin" | grep -i CoreML
+          ! otool -L "$ROOT/wmr.bin" | grep -i onnxruntime
+          test -d "$ROOT/migan_512_places2_fp16.mlpackage"
+          "$ROOT/wmr" video --help | grep -q -- "--notebooklm-method"
+          if [ "$HAS_CERT" = "1" ]; then
+            codesign --verify --strict --verbose=2 "$ROOT/wmr.bin"
+            codesign -dv "$ROOT/wmr.bin" | grep -q "Authority=Developer ID Application"
+            if [ -d "$ROOT/lib" ]; then
+              find "$ROOT/lib" -type f -name '*.dylib' -exec codesign --verify --strict {} \;
+            fi
+          fi
+
+      - name: Verify packaged macOS x86_64 artifact runs (CPU path)
+        if: runner.os == 'macOS' && matrix.macos_arch == 'x86_64'
+        env:
+          HAS_CERT: "${{ secrets.MACOS_CERTIFICATE != '' && '1' || '' }}"
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/verify-x86
+          ditto -x -k dist/wmr-macos-x86_64.zip /tmp/verify-x86/
+          ROOT=/tmp/verify-x86/wmr-macos-x86_64
+          # x86_64 binary runs on the arm64 host via Rosetta. CoreML MI-GAN present.
+          VK_ICD_FILENAMES=/nonexistent "$ROOT/wmr" remove test-images/2400x1792-test1-gemini.png --denoise ai -o /tmp/verify_x86_out.png
+          otool -L "$ROOT/wmr" | grep -i CoreML
+          ! otool -L "$ROOT/wmr" | grep -i onnxruntime
+          test -d "$ROOT/migan_512_places2_fp16.mlpackage"
+          "$ROOT/wmr" video --help | grep -q -- "--notebooklm-method"
+          if [ "$HAS_CERT" = "1" ]; then
+            codesign --verify --strict --verbose=2 "$ROOT/wmr"
+            codesign -dv "$ROOT/wmr" | grep -q "Authority=Developer ID Application"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -294,8 +382,8 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/wmr-macos-arm64/wmr-macos-arm64.tar.gz
-            artifacts/wmr-macos-x86_64/wmr-macos-x86_64.tar.gz
+            artifacts/wmr-macos-arm64/wmr-macos-arm64.zip
+            artifacts/wmr-macos-x86_64/wmr-macos-x86_64.zip
             artifacts/wmr-linux-x86_64/wmr-linux-x86_64.tar.gz
             artifacts/wmr-windows-x86_64/wmr-windows-x86_64.zip
             LICENSE-THIRD-PARTY.md

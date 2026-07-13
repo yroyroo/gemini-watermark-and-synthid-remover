@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Minimal entitlements for the hardened-runtime macOS build. Starts EMPTY: the
+  core watermark removal + CoreML MI-GAN need no special entitlements.
+
+  If verification shows the GPU AI-denoise path (Vulkan/MoltenVK/NCNN) cannot run
+  under hardened runtime, add keys here one at a time:
+    com.apple.security.cs.allow-jit
+    com.apple.security.cs.allow-unsigned-executable-memory
+    com.apple.security.cs.disable-library-validation  (last resort only)
+
+  Hardened runtime strips DYLD_* env vars but NOT arbitrary env vars, so the wmr
+  launcher's VK_ICD_FILENAMES export survives. NCNN's CPU fallback is the safety
+  net if the GPU path cannot load.
+-->
+<plist version="1.0">
+<dict>
+</dict>
+</plist>
