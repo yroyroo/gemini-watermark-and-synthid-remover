@@ -36,23 +36,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            artifact: wmr-macos-arm64
-            binary: build/wmr
-            macos_arch: arm64
-            vcpkg_triplet: arm64-osx
-            enable_migan: true
-          - os: macos-14
-            artifact: wmr-macos-x86_64
-            binary: build/wmr
-            macos_arch: x86_64
-            vcpkg_triplet: x64-osx
-            enable_migan: true   # 1.10.0: CoreML (system framework, arch-neutral .mlpackage), Intel Macs gain MI-GAN
-          - os: ubuntu-latest
-            artifact: wmr-linux-x86_64
-            binary: build/wmr
-            vcpkg_triplet: x64-linux
-            enable_migan: true
           - os: windows-latest
             artifact: wmr-windows-x86_64
             binary: build/wmr.exe
