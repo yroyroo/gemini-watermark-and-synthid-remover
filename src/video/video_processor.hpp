@@ -10,6 +10,7 @@
 #include "video/video_writer.hpp"
 #include "video/notebooklm_detector.hpp"
 #include "video/geometry_detector.hpp"
+#include "core/inpaint.hpp"
 
 namespace wmr {
 
